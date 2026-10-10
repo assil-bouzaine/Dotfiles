@@ -10,12 +10,17 @@ local mainMod = "SUPER" -- Sets "Windows" key as main modifier
 hl.bind(mainMod .. " + W",      hl.dsp.exec_cmd("brave"))
 hl.bind(mainMod .. " + RETURN", hl.dsp.exec_cmd(terminal))
 hl.bind(mainMod .. " + C",      hl.dsp.window.close())
-hl.bind(mainMod .. " + M",      hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch exit"))
+hl.bind(mainMod .. " + M",      hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"))
 hl.bind(mainMod .. " + F",      hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + V",      hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd("~/.config/rofi/launchers/type-2/launcher.sh"))
 hl.bind(mainMod .. " + P",      hl.dsp.window.pseudo()) -- dwindle
 hl.bind("SUPER + L",            hl.dsp.exec_cmd("hyprlock"))
+
+-- Handy voice-to-text: SUPER + A, same key as Handy's own shortcut.
+-- Handy reads it straight from the keyboard (handy_keys mode, needs the
+-- `input` group); this no-op bind only stops the key reaching other apps.
+hl.bind(mainMod .. " + A", hl.dsp.no_op())
 
 -- Window groups (tabbed windows)
 hl.bind(mainMod .. " + G", hl.dsp.group.toggle())

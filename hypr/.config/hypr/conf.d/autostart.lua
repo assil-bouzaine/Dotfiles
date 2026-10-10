@@ -9,4 +9,5 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")
     hl.exec_cmd("xwaylandvideobridge")
     hl.exec_cmd("brave --no-startup-window")
+    hl.exec_cmd("handy --start-hidden") -- voice-to-text, toggled with SUPER + A
 end)
