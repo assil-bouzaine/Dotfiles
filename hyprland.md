@@ -152,6 +152,17 @@ below (it reads the keyboard directly instead).
    `hyprctl dispatch 'hl.dsp.exec_cmd("handy --start-hidden")'`, click into a
    text box, then hold SUPER + A, talk, and let go.
 
+**Updating Handy** (it's the AUR package `handy-bin`):
+```sh
+yay -Syu handy-bin                                   # or plain `yay` to update everything
+pkill -x handy; hyprctl dispatch 'hl.dsp.exec_cmd("handy --start-hidden")'   # restart (or relog)
+pacman -Q handy-bin                                  # check the version
+```
+Don't use Handy's built-in "update" button. It downloads the .deb/AppImage
+build and fights with pacman. Settings, models and the udev/group setup
+survive updates. If SUPER + A stops working after one, check the log below
+(a new version may have renamed `keyboard_implementation` or other settings).
+
 **If it doesn't work**, check `~/.local/share/com.pais.handy/logs/handy.log`.
 Its times are UTC, so they can be an hour or more off from your clock.
 - `hotkey blocking requires write access to /dev/uinput` → step 3 or 4 missed.
