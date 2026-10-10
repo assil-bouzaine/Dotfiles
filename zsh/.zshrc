@@ -206,3 +206,10 @@ export NVM_DIR="$HOME/.nvm"
 
 # Added by Feynman installer
 export PATH="/home/mclovin/.local/bin:$PATH"
+
+# opencode
+export PATH=/home/mclovin/.opencode/bin:$PATH
+
+# Android SDK
+export ANDROID_HOME=$HOME/Android/sdk
+export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/35.0.0
