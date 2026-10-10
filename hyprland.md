@@ -137,6 +137,8 @@ below (it reads the keyboard directly instead).
    - `"keyboard_implementation": "handy_keys"`
    - `bindings → transcribe → "current_binding": "super+a"`
    - `"shortcut_activation": "push_to_talk"` (hold to talk)
+   - `"overlay_style": "minimal"` (small bar at the bottom while recording;
+     `"none"` hides it)
 
    Or set the same options in Handy's settings window if they're shown there.
 
