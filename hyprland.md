@@ -119,9 +119,12 @@ below (it reads the keyboard directly instead).
    ```
 
 3. **Allow the `input` group to use `/dev/uinput`** (Handy needs it to
-   re-send keys it doesn't use):
+   re-send keys it doesn't use). Without `static_node` and the
+   modules-load file it only works until the next reboot:
    ```sh
-   echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' | sudo tee /etc/udev/rules.d/99-uinput.rules
+   echo 'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"' | sudo tee /etc/udev/rules.d/99-uinput.rules
+   echo uinput | sudo tee /etc/modules-load.d/uinput.conf
+   sudo modprobe uinput
    sudo udevadm control --reload
    sudo udevadm trigger --name-match=uinput
    ```
