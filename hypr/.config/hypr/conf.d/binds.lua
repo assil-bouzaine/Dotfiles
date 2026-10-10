@@ -18,8 +18,19 @@ hl.bind(mainMod .. " + P",      hl.dsp.window.pseudo()) -- dwindle
 hl.bind("SUPER + L",            hl.dsp.exec_cmd("hyprlock"))
 
 -- Window groups (tabbed windows)
-hl.bind(mainMod .. " + G",   hl.dsp.group.toggle())
-hl.bind(mainMod .. " + TAB", hl.dsp.group.next())
+hl.bind(mainMod .. " + G", hl.dsp.group.toggle())
+
+-- SUPER + TAB: next tab when the focused window is in a group with 2+ windows
+-- (stacked VSCode / Brave), otherwise cycle to the next window.
+-- One bind on purpose — two binds on the same key both fire.
+hl.bind(mainMod .. " + TAB", function()
+    local win = hl.get_active_window()
+    if win and win.group and win.group.size > 1 then
+        hl.dispatch(hl.dsp.group.next())
+    else
+        hl.dispatch(hl.dsp.window.cycle_next())
+    end
+end)
 
 -- Move focus with mainMod + arrow keys
 hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
@@ -40,11 +51,6 @@ for i = 1, 10 do
     hl.bind(mainMod .. " + " .. key,         hl.dsp.focus({ workspace = i }))
     hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
 end
-
--- NOTE: the old conf bound SUPER + TAB twice (changegroupactive AND cyclenext
--- below). Both are kept here in the same order; the cyclenext bind wins on
--- conflict. Remove one if you only want grouping or cycling on TAB.
-hl.bind(mainMod .. " + TAB", hl.dsp.window.cycle_next())
 
 -- Example special workspace (scratchpad)
 hl.bind(mainMod .. " + S",         hl.dsp.workspace.toggle_special("magic"))

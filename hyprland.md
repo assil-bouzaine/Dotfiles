@@ -93,8 +93,8 @@ bezier = "easeOutQuint", style = "popin 87%" })`.
 - **One `workspace_rule()` per workspace.** Two calls for the same workspace
   overwrite each other — merge them into a single call.
 - **Keysym names, not characters.** `;` → `semicolon`, `Return` → `RETURN`.
-- **`hl.bind` order matters on conflicts.** `SUPER+TAB` is bound twice here
-  (group-next, then cycle-next wins) — remove one if you only want one behavior.
+- **Two binds on the same key both fire.** Use one bind with a Lua function
+  instead (see `SUPER+TAB` in `binds.lua`: next group tab, else cycle windows).
 - **`initial_class` vs `class`** in window-rule matches: both accepted, but if a
   rule ever stops matching, try switching to `class`.
 

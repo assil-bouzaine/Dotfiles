@@ -33,6 +33,16 @@ hl.window_rule({
     workspace = "9",
 })
 
+-- VSCode always opens on workspace 3, stacked as tabs in one group
+-- (a second window joins the group if it is focused; switch with SUPER + TAB)
+hl.window_rule({
+    name  = "vscode-workspace",
+    match = { class = "^(com\\.microsoft\\.VSCode|[Cc]ode|code-oss)$" },
+
+    workspace = "3",
+    group     = "set",
+})
+
 -- Thunar always opens on workspace 3
 hl.window_rule({
     name  = "thunar",
@@ -112,7 +122,7 @@ hl.window_rule({
     match = { title = "^(meet.google.com is sharing your screen.)$" },
 
     workspace = "6",
-    opacity   = "0.0 0.0",
+    opacity   = 0.0,
     no_focus  = true,
     no_shadow = true,
 })
@@ -120,7 +130,7 @@ hl.window_rule({
 hl.window_rule({
     name  = "file-picker-floating",
     match = {
-        class = "^(brave)$",
+        class = "^(brave-browser)$",
         title = "^(.* wants to open.*|.* wants to save.*)$",
     },
 
