@@ -196,9 +196,9 @@ if [ "$XDG_SESSION_TYPE" = "x11" ]; then
 fi
 
 # Auto-attach or create tmux session
-#if command -v tmux &> /dev/null && [ -z "$TMUX" ]; then
-#  tmux attach -t main 2>/dev/null || tmux new-session -s main
-#fi
+if command -v tmux &> /dev/null && [ -z "$TMUX" ]; then
+  tmux attach -t main 2>/dev/null || tmux new-session -s main
+fi
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
