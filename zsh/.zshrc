@@ -152,7 +152,7 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 # some more ls aliases
-alias ls='ls -la'
+alias ls='ls -la --color=auto'
 alias ll='ls -l'
 alias la='ls -A'
 alias l='ls -CF'
