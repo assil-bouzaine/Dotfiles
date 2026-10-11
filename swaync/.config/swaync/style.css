@@ -1,0 +1,159 @@
+/* swaync: small, quiet toasts in the same style as the waybar pills and the
+ * rofi cards (waybar/.config/waybar/scripts/card.rasi). Loaded on top of
+ * /etc/xdg/swaync/style.css, so only the differences live here. */
+
+:root {
+  --cc-bg: rgba(19, 19, 19, 0.92);
+  --noti-border-color: rgba(51, 204, 255, 0.25);
+  --noti-bg: 19, 19, 19;
+  --noti-bg-alpha: 0.92;
+  --noti-bg-darker: rgba(31, 31, 31, 0.85);
+  --noti-bg-hover: rgba(58, 74, 92, 0.45);
+  --noti-bg-focus: transparent;
+  --noti-close-bg: rgba(255, 255, 255, 0.06);
+  --noti-close-bg-hover: rgba(255, 255, 255, 0.14);
+  --text-color: #d6dae4;
+  --text-color-disabled: #5c6370;
+  --bg-selected: #33ccff;
+  --notification-icon-size: 34px;
+  --border-radius: 12px;
+  --notification-shadow: none;
+  --font-size-body: 12px;
+  --font-size-summary: 13px;
+}
+
+* {
+  font-family: "CaskaydiaCove Nerd Font", sans-serif;
+}
+
+/* ── Popup toasts ───────────────────────────────────────────────────── */
+
+.notification-row .notification-background {
+  padding: 4px 6px 2px;
+}
+
+.notification-row .notification-background .notification {
+  box-shadow: none;
+}
+
+.notification-row .notification-background .notification .notification-default-action {
+  padding: 8px 10px;
+}
+
+.notification-row .notification-background .notification .notification-default-action:hover {
+  background: var(--noti-bg-hover);
+}
+
+.notification-row .notification-background .notification .notification-default-action .notification-content .image {
+  margin: 0 10px 0 0;
+  border-radius: 9px;
+}
+
+.notification-row .notification-background .notification .notification-default-action .notification-content .app-icon {
+  -gtk-icon-size: 14px;
+  margin: 0 10px 0 0;
+}
+
+.notification-row .notification-background .notification .notification-default-action .notification-content .text-box .summary {
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.notification-row .notification-background .notification .notification-default-action .notification-content .text-box .time {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-color-disabled);
+  margin-right: 22px;
+}
+
+.notification-row .notification-background .notification .notification-default-action .notification-content .text-box .body {
+  color: #9aa3b2;
+}
+
+.notification-row .notification-background .notification .notification-default-action .notification-content progressbar {
+  min-height: 4px;
+  border-radius: 4px;
+}
+
+.notification-row .notification-background .notification .notification-default-action .notification-content progressbar progress {
+  background: linear-gradient(90deg, #33ccff, #00ff99);
+  border-radius: 4px;
+}
+
+/* Close button only shows on hover */
+.close-button {
+  min-width: 20px;
+  min-height: 20px;
+  margin-top: 6px;
+  margin-right: 6px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.notification-row:hover .close-button {
+  opacity: 1;
+}
+
+/* Action buttons (e.g. "Reply", "Open") as small pills */
+.notification-row .notification-background .notification .notification-action > button {
+  margin: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: none;
+  background: var(--noti-bg-darker);
+  color: var(--text-color);
+}
+.notification-row .notification-background .notification .notification-action > button:hover {
+  background: var(--noti-bg-hover);
+}
+
+/* Critical: a red accent instead of a louder box */
+.notification-row .notification-background .notification.critical {
+  border-color: rgba(247, 17, 24, 0.5);
+}
+
+/* ── Control center (bell click) ────────────────────────────────────── */
+
+.control-center {
+  border: 1px solid var(--noti-border-color);
+  border-radius: 12px;
+  box-shadow: none;
+  padding: 6px;
+}
+
+.widget-title > label {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.widget-title > button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: none;
+  background: var(--noti-bg-darker);
+  color: var(--text-color);
+  box-shadow: none;
+}
+.widget-title > button:hover {
+  background: var(--noti-bg-hover);
+}
+
+.widget-dnd > label {
+  font-size: 13px;
+}
+.widget-dnd > switch {
+  border-radius: 10px;
+  background: var(--noti-bg-darker);
+  border: none;
+}
+.widget-dnd > switch:checked {
+  background: linear-gradient(45deg, #33ccff, #00ff99);
+}
+.widget-dnd > switch slider {
+  border-radius: 8px;
+  background: #d6dae4;
+}
+
+.control-center .control-center-list .notification {
+  box-shadow: none;
+}
