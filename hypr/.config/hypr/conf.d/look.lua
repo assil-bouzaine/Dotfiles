@@ -5,7 +5,7 @@ hl.config({
     -- https://wiki.hypr.land/configuring/core/config-options/#general
     general = {
         gaps_in  = 5,
-        gaps_out = 15,
+        gaps_out = 6, -- small screen; waybar margins match
 
         border_size = 2,
 

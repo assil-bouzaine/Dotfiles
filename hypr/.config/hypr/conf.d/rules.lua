@@ -75,17 +75,18 @@ hl.window_rule({
     float = true,
 })
 
+-- Brave's group is locked so other apps opened on workspace 2 don't get
+-- pulled in as tabs (group.auto_group adds new windows to the focused group);
+-- "invade" still lets new Brave windows join it.
 hl.window_rule({
     name  = "brave-workspace",
     match = { class = "^(brave-browser)$" },
 
-    workspace   = "2",
-    border_size = 0,
-    rounding    = 0,
-    group       = "set",
+    workspace = "2",
+    group     = "set lock invade",
 })
 
--- NOTE: `initial_class` matches below are kept 1:1 from the old conf.
+-- NOTE: the `initial_class` match below is kept 1:1 from the old conf.
 -- If Hyprland complains on reload, switch them to `class`.
 hl.window_rule({
     name  = "ristretto-workspace",
@@ -94,16 +95,20 @@ hl.window_rule({
     workspace = "8",
 })
 
+-- Spotify reports its class as "Spotify" (capital S); match both spellings.
+-- "barred" keeps it out of whatever group is focused when it opens.
 hl.window_rule({
     name  = "spotify-workspace",
-    match = { initial_class = "spotify" },
+    match = { class = "^([Ss]potify)$" },
 
     workspace = "4",
+    group     = "barred",
 })
 
--- Workspace 2: floating layout, always no gaps (single rule — separate
--- workspace_rule() calls for the same workspace overwrite each other)
-hl.workspace_rule({ workspace = "2", layout = "floating", gaps_in = 0, gaps_out = 0 })
+-- Workspace 2: floating layout (single rule — separate workspace_rule()
+-- calls for the same workspace overwrite each other). Normal gaps, so Brave
+-- doesn't fill the screen edge to edge.
+hl.workspace_rule({ workspace = "2", layout = "floating" })
 
 hl.window_rule({
     name  = "xwayland-video-bridge-fixes",
@@ -145,4 +150,23 @@ hl.window_rule({
 
     float  = true,
     center = true,
+})
+
+-- Waybar: blur the desktop behind the translucent bar
+hl.layer_rule({
+    name  = "waybar-blur",
+    match = { namespace = "^(waybar)$" },
+
+    blur         = true,
+    ignore_alpha = 0.3,
+})
+
+-- Bluetooth/network settings and htop opened from the bar float in the middle
+hl.window_rule({
+    name  = "bar-popups-floating",
+    match = { class = "^(blueman-manager|nm-connection-editor|bar-htop)$" },
+
+    float  = true,
+    center = true,
+    size   = "800 520",
 })
