@@ -1,0 +1,107 @@
+/* Shared rofi theme for the bar's drop-down cards (Wi-Fi, Bluetooth, apps).
+ * The card hangs under the bar's top-right corner (launcher.rasi flips it
+ * to the left), styled like the bar pills and the swaync panel.
+ *
+ * Click-outside-to-close: rofi covers the whole screen with a transparent
+ * window, and the empty space around the card is made of invisible
+ * buttons bound to kb-cancel. */
+
+configuration {
+    click-to-exit: true;
+}
+
+* {
+    bg:       #131313eb;
+    card:     #1f1f1fd9;
+    hover:    #3a4a5cd9;
+    fg:       #d6dae4;
+    dim:      #5c6370;
+    cyan:     #33ccff;
+
+    font: "CaskaydiaCove Nerd Font 11";
+    background-color: transparent;
+    text-color: @fg;
+}
+
+window {
+    fullscreen: true;
+    background-color: transparent;
+    orientation: horizontal;
+    children: [ button-dismiss-side, column, button-dismiss-edge ];
+}
+
+column {
+    expand: false;
+    orientation: vertical;
+    children: [ button-dismiss-top, mainbox, button-dismiss-bottom ];
+}
+
+/* The invisible click-to-close area around the card */
+button-dismiss-side,
+button-dismiss-edge,
+button-dismiss-top,
+button-dismiss-bottom {
+    content: "";
+    action: "kb-cancel";
+    cursor: default;
+}
+button-dismiss-side   { expand: true; }
+button-dismiss-bottom { expand: true; }
+button-dismiss-edge   { expand: false; padding: 0 3px; }  /* 6px gap to screen edge */
+button-dismiss-top    { expand: false; padding: 9px 0; }  /* ~38px: bar height + gap */
+
+mainbox {
+    expand: false;
+    width: 360px;
+    padding: 12px;
+    spacing: 10px;
+    border: 1px;
+    border-color: #33ccff40;
+    border-radius: 12px;
+    background-color: @bg;
+    children: [ inputbar, message, listview ];
+}
+
+inputbar {
+    padding: 8px 12px;
+    spacing: 10px;
+    border-radius: 9px;
+    background-color: @card;
+    children: [ prompt, entry ];
+}
+prompt { text-color: @cyan; }
+entry {
+    placeholder: "Search";
+    placeholder-color: @dim;
+    cursor: text;
+}
+
+message {
+    padding: 8px 12px;
+    border-radius: 9px;
+    background-color: @card;
+}
+textbox { text-color: @dim; markup: true; }
+
+listview {
+    /* Must be a fixed height: anything dynamic collapses to 0 rows inside
+     * the non-expanding column. The scripts pass -l <rows> to fit the list. */
+    lines: 7;
+    fixed-height: true;
+    scrollbar: false;
+    spacing: 4px;
+}
+
+element {
+    padding: 8px 12px;
+    border-radius: 9px;
+    cursor: pointer;
+}
+element normal.normal,
+element alternate.normal { background-color: transparent; }
+element selected.normal  { background-color: @hover; }
+element-text {
+    vertical-align: 0.5;
+    cursor: inherit;
+    highlight: bold #33ccff;
+}

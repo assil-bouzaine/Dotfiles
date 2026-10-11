@@ -7,13 +7,19 @@ local menu        = "rofi -show drun"
 
 local mainMod = "SUPER" -- Sets "Windows" key as main modifier
 
+-- Drop-down cards shared with the waybar buttons (apps, Wi-Fi, Bluetooth).
+-- Pressing the key again while a card is open closes it.
+local cards = "pkill -x rofi || "
+
 hl.bind(mainMod .. " + W",      hl.dsp.exec_cmd("brave"))
 hl.bind(mainMod .. " + RETURN", hl.dsp.exec_cmd(terminal))
 hl.bind(mainMod .. " + C",      hl.dsp.window.close())
 hl.bind(mainMod .. " + M",      hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"))
 hl.bind(mainMod .. " + F",      hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + V",      hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd("~/.config/rofi/launchers/type-2/launcher.sh"))
+hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd(cards .. "rofi -show drun -theme ~/.config/waybar/scripts/launcher.rasi"))
+hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/wifi-menu.sh"))
+hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/bluetooth-menu.sh"))
 hl.bind(mainMod .. " + P",      hl.dsp.window.pseudo()) -- dwindle
 hl.bind("SUPER + L",            hl.dsp.exec_cmd("hyprlock"))
 

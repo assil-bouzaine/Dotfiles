@@ -1,0 +1,244 @@
+// Waybar top bar (Hyprland, Lua config)
+// Managed with GNU Stow from ~/.dotfiles (package: waybar).
+// Started from hypr/conf.d/autostart.lua. Reload after edits: pkill waybar && waybar &
+{
+    "layer": "top",
+    "position": "top",
+    "height": 30,
+    "margin-top": 4,
+    "margin-left": 6,    // matches general.gaps_out in hypr/conf.d/look.lua
+    "margin-right": 6,
+    "spacing": 4,
+
+    "modules-left": [
+        "custom/launcher",
+        "group/workspaces"
+    ],
+    "modules-center": ["clock"],
+    "modules-right": [
+        "group/stats",
+        "group/connect",
+        "tray",
+        "custom/notification"
+    ],
+
+    // ── Groups (each one is drawn as a single pill in style.css) ─────────
+
+    "group/workspaces": {
+        "orientation": "horizontal",
+        "modules": [
+            "custom/ws-daemon",
+            "custom/ws-1", "custom/ws-2", "custom/ws-3", "custom/ws-4", "custom/ws-5",
+            "custom/ws-6", "custom/ws-7", "custom/ws-8", "custom/ws-9", "custom/ws-10"
+        ]
+    },
+    "group/stats": {
+        "orientation": "horizontal",
+        "modules": ["cpu", "memory", "network#speed"]
+    },
+    "group/connect": {
+        "orientation": "horizontal",
+        "modules": ["network", "bluetooth"]
+    },
+
+    // ── Left ─────────────────────────────────────────────────────────────
+
+    "custom/launcher": {
+        "format": "",
+        "tooltip": false,
+        "on-click": "pkill -x rofi || rofi -show drun -theme ~/.config/waybar/scripts/launcher.rasi"
+    },
+
+    // Workspaces: see scripts/workspaces.py for why this isn't hyprland/workspaces.
+    // ws-daemon prints nothing (so it's hidden); it only keeps the daemon alive.
+    "custom/ws-daemon": {
+        "exec": "~/.config/waybar/scripts/workspaces.py",
+        "restart-interval": 2,
+        "tooltip": false
+    },
+    "custom/ws-1": {
+        "exec": "sed -n '1p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 1 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-2": {
+        "exec": "sed -n '2p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 2 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-3": {
+        "exec": "sed -n '3p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 3 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-4": {
+        "exec": "sed -n '4p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 4 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-5": {
+        "exec": "sed -n '5p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 5 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-6": {
+        "exec": "sed -n '6p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 6 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-7": {
+        "exec": "sed -n '7p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 7 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-8": {
+        "exec": "sed -n '8p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 8 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-9": {
+        "exec": "sed -n '9p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 9 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+    "custom/ws-10": {
+        "exec": "sed -n '10p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once",
+        "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 10 })'",
+        "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
+        "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+
+    // ── Center ───────────────────────────────────────────────────────────
+
+    "clock": {
+        "format": "{:%a %d %b  ·  %H:%M}",
+        "tooltip-format": "<tt>{calendar}</tt>",
+        "calendar": {
+            "mode": "month",
+            "on-scroll": 1,
+            "format": {
+                "months":   "<span color='#33ccff'><b>{}</b></span>",
+                "weekdays": "<span color='#5c6370'><b>{}</b></span>",
+                "today":    "<span color='#00ff99'><b><u>{}</u></b></span>"
+            }
+        },
+        "actions": {
+            "on-scroll-up": "shift_up",
+            "on-scroll-down": "shift_down"
+        }
+    },
+
+    // ── Right: stats ─────────────────────────────────────────────────────
+
+    "cpu": {
+        "interval": 2,
+        "format": "  {usage}%",
+        "states": { "warning": 70, "critical": 90 },
+        "on-click": "kitty --class bar-htop -e htop"
+    },
+    "memory": {
+        "interval": 3,
+        "format": "󰍛  {percentage}%",
+        "tooltip-format": "RAM {used:0.1f} / {total:0.1f} GiB\nSwap {swapUsed:0.1f} / {swapTotal:0.1f} GiB",
+        "states": { "warning": 75, "critical": 90 },
+        "on-click": "kitty --class bar-htop -e htop --sort-key=PERCENT_MEM"
+    },
+    "network#speed": {
+        "interval": 1,
+        "format": "󰇚  {bandwidthDownBytes}",
+        "format-disconnected": "󰇚  --",
+        "tooltip-format": "↓ {bandwidthDownBytes}   ↑ {bandwidthUpBytes}"
+    },
+
+    // ── Right: connectivity ──────────────────────────────────────────────
+
+    "network": {
+        "format-wifi": "{icon}  {essid}",
+        "format-ethernet": "󰈀  Wired",
+        "format-disconnected": "󰤭  Offline",
+        "format-disabled": "󰖪  Off",
+        "format-icons": ["󰤟", "󰤢", "󰤥", "󰤨"],
+        "interface": "wlan0",
+        "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr} on {ifname}\nClick: pick network · Right-click: settings",
+        "tooltip-format-ethernet": "{ipaddr} on {ifname}",
+        "tooltip-format-disconnected": "Click: pick network",
+        "on-click": "pkill -x rofi || ~/.config/waybar/scripts/wifi-menu.sh",
+        "on-click-right": "nm-connection-editor"
+    },
+    "bluetooth": {
+        "format": "󰂯",
+        "format-off": "󰂲",
+        "format-disabled": "󰂲",
+        "format-connected": "󰂱  {device_alias}",
+        "format-connected-battery": "󰂱  {device_alias} {device_battery_percentage}%",
+        "tooltip-format": "{controller_alias}: {status}\nClick: devices · Right-click: power on/off",
+        "tooltip-format-connected": "{device_enumerate}\nClick: devices · Right-click: power on/off",
+        "tooltip-format-enumerate-connected": "{device_alias}",
+        "on-click": "pkill -x rofi || ~/.config/waybar/scripts/bluetooth-menu.sh",
+        "on-click-right": "bluetoothctl show | grep -q 'Powered: yes' && bluetoothctl power off || { rfkill unblock bluetooth; sleep 1; bluetoothctl power on; }"
+    },
+
+    "tray": {
+        "icon-size": 16,
+        "spacing": 8
+    },
+
+    "custom/notification": {
+        "exec": "swaync-client -swb",
+        "return-type": "json",
+        "format": "{icon}",
+        "format-icons": {
+            "notification": "󰂚<span foreground='#00ff99'><sup></sup></span>",
+            "none": "󰂜",
+            "dnd-notification": "󰂛<span foreground='#00ff99'><sup></sup></span>",
+            "dnd-none": "󰂛",
+            "inhibited-notification": "󰂚<span foreground='#00ff99'><sup></sup></span>",
+            "inhibited-none": "󰂜",
+            "dnd-inhibited-notification": "󰂛<span foreground='#00ff99'><sup></sup></span>",
+            "dnd-inhibited-none": "󰂛"
+        },
+        "tooltip": false,
+        "escape": true,
+        "on-click": "swaync-client -t -sw",
+        "on-click-right": "swaync-client -d -sw"
+    }
+}

@@ -1,0 +1,130 @@
+/* Waybar style: transparent bar with floating pills (cards like the Wi-Fi
+ * menu in scripts/wifi.rasi), colours from kitty.conf and
+ * the cyan → green window border in hypr/conf.d/look.lua. */
+
+@define-color pill      rgba(19, 19, 19, 0.92);
+@define-color border    rgba(51, 204, 255, 0.25);
+@define-color pill-hover rgba(58, 74, 92, 0.90);
+@define-color fg        #d6dae4;
+@define-color dim       #5c6370;
+@define-color cyan      #33ccff;
+@define-color green     #00ff99;
+@define-color yellow    #ecb90f;
+@define-color red       #f71118;
+@define-color magenta   #c162de;
+
+* {
+    font-family: "CaskaydiaCove Nerd Font", "JetBrainsMono Nerd Font", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+}
+
+window#waybar {
+    background: transparent;
+    color: @fg;
+}
+
+tooltip {
+    background: rgba(19, 19, 19, 0.95);
+    border: 1px solid alpha(@cyan, 0.4);
+    border-radius: 10px;
+}
+tooltip label {
+    color: @fg;
+    padding: 4px;
+}
+
+/* ── Pills ──────────────────────────────────────────────────────────── */
+
+#custom-launcher,
+#workspaces,
+#clock,
+#stats,
+#connect,
+#tray,
+#custom-notification {
+    background: @pill;
+    border: 1px solid @border;
+    border-radius: 10px;
+    margin: 1px 0;
+    padding: 0 10px;
+}
+
+/* modules inside a group get breathing room, the group draws the pill */
+#cpu, #memory, #network.speed,
+#network, #bluetooth {
+    padding: 0 6px;
+}
+
+/* ── Left ───────────────────────────────────────────────────────────── */
+
+#custom-launcher {
+    font-size: 16px;
+    padding: 0 14px 0 11px;
+    color: @cyan;
+    transition: color 200ms ease;
+}
+#custom-launcher:hover { color: @green; }
+
+#workspaces { padding: 0 4px; }
+
+#workspaces label {
+    padding: 0 9px;
+    margin: 3px 2px;
+    border-radius: 7px;
+    color: @dim;
+    transition: all 250ms ease;
+}
+#workspaces label.empty    { color: @dim; }
+#workspaces label.occupied { color: @fg; }
+#workspaces label.visible  { color: @cyan; background: alpha(@cyan, 0.12); }
+#workspaces label.active {
+    color: #131313;
+    padding: 0 16px;
+    background-image: linear-gradient(45deg, @cyan, @green);
+}
+#workspaces label:hover:not(.active) {
+    color: @fg;
+    background: @pill-hover;
+}
+
+/* ── Center ─────────────────────────────────────────────────────────── */
+
+#clock {
+    color: @fg;
+    padding: 0 16px;
+}
+
+/* ── Right ──────────────────────────────────────────────────────────── */
+
+#cpu                  { color: @cyan; }
+#memory               { color: @magenta; }
+#network.speed        { color: @green; min-width: 78px; }
+#cpu.warning,
+#memory.warning       { color: @yellow; }
+#cpu.critical,
+#memory.critical      { color: @red; }
+
+#network              { color: @cyan; }
+#network.disconnected,
+#network.disabled     { color: @dim; }
+#bluetooth            { color: #2a84d2; }
+#bluetooth.connected  { color: @cyan; }
+#bluetooth.off,
+#bluetooth.disabled   { color: @dim; }
+
+#tray > .needs-attention { background: alpha(@red, 0.3); border-radius: 6px; }
+
+#custom-notification {
+    font-size: 15px;
+    padding: 0 13px 0 11px;
+    color: @fg;
+}
+
+#cpu:hover, #memory:hover, #network:hover, #bluetooth:hover,
+#custom-notification:hover {
+    color: @green;
+}
