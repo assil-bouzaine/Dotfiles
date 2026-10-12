@@ -5,7 +5,7 @@ stow package that mirrors `$HOME`:
 
 | Package | Manages | Needs (beyond base) |
 |---|---|---|
-| `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, thunar, rofi, brave-bin (AUR), handy-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl |
+| `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), handy-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl |
 | `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, swaync + libnotify, htop, python, rofi, CaskaydiaCove Nerd Font |
 | `swaync` | `~/.config/swaync/` (small toasts styled like the bar, 4s timeout, no grouping) | swaync |
 | `kitty` | `~/.config/kitty/` | kitty, CaskaydiaCove Nerd Font |
@@ -29,7 +29,7 @@ password, so don't run them through Claude's `!` prompt.
 sudo pacman -S --needed git base-devel stow zsh tmux vim curl fzf lua \
   hyprland hypridle hyprlock awww \
   xdg-desktop-portal-hyprland xdg-desktop-portal-gtk \
-  kitty thunar rofi gnome-keyring \
+  kitty dolphin gwenview archlinux-xdg-menu plasma-integration polkit-kde-agent rofi gnome-keyring \
   pipewire pipewire-pulse wireplumber brightnessctl playerctl \
   wl-clipboard wtype zsh-syntax-highlighting \
   waybar networkmanager nm-connection-editor bluez bluez-utils blueman \
@@ -42,6 +42,10 @@ What the less obvious ones are for:
 - **pipewire-pulse, wireplumber:** audio and the volume keys (`wpctl`).
 - **wtype:** lets Handy type the transcribed text.
 - **fzf:** the fuzzy `cd` function in `.zshrc` and the vim fzf plugin.
+- **dolphin, gwenview, plasma-integration, archlinux-xdg-menu:** file manager
+  and image viewer; the last two give them Breeze styling and a working
+  "Open with" menu outside Plasma (see `conf.d/env.lua`).
+- **polkit-kde-agent:** password prompts for pkexec and settings apps.
 - **lua:** gives `luac`, used to syntax-check the Hyprland config.
 - **zsh-syntax-highlighting:** `.zshrc` sources it from `/usr/share/zsh/plugins/`.
 - **networkmanager, bluez, blueman, swaync:** what the bar's Wi-Fi,
@@ -152,7 +156,7 @@ Bluetooth to turn it on/off, click the bell for the notification panel
 (right-click: do not disturb).
 
 Window rules worth knowing: kitty → 1, Brave → 2 (Brave windows stack as
-tabs, other apps can't join that group), VSCode / Thunar → 3, Spotify → 4.
+tabs, other apps can't join that group), VSCode / Dolphin → 3, Gwenview → 8, Spotify → 4.
 
 ## Day-to-day stow usage
 

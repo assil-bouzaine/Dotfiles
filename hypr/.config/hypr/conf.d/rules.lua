@@ -43,10 +43,10 @@ hl.window_rule({
     group     = "set",
 })
 
--- Thunar always opens on workspace 3
+-- Dolphin always opens on workspace 3
 hl.window_rule({
-    name  = "thunar",
-    match = { class = "^(thunar)$" },
+    name  = "dolphin",
+    match = { class = "^(org\\.kde\\.dolphin)$" },
 
     workspace = "3",
 })
@@ -89,8 +89,8 @@ hl.window_rule({
 -- NOTE: the `initial_class` match below is kept 1:1 from the old conf.
 -- If Hyprland complains on reload, switch them to `class`.
 hl.window_rule({
-    name  = "ristretto-workspace",
-    match = { initial_class = "org.xfce.ristretto" },
+    name  = "gwenview-workspace",
+    match = { initial_class = "org.kde.gwenview" },
 
     workspace = "8",
 })

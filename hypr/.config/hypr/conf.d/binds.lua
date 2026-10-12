@@ -2,7 +2,7 @@
 -- See https://wiki.hypr.land/configuring/core/binds/
 
 local terminal    = "kitty"
-local fileManager = "thunar"
+local fileManager = "dolphin"
 local menu        = "rofi -show drun"
 
 local mainMod = "SUPER" -- Sets "Windows" key as main modifier
