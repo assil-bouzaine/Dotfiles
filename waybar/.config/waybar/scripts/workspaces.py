@@ -9,6 +9,10 @@ This daemon listens to Hyprland's event socket. On every workspace or window
 change it writes one JSON line per workspace to $XDG_RUNTIME_DIR/waybar-ws and
 sends SIGRTMIN+8 to waybar, so each custom/ws-N re-reads its own line.
 Waybar starts it through the hidden custom/ws-daemon module.
+
+It finds the running Hyprland itself instead of trusting
+HYPRLAND_INSTANCE_SIGNATURE: waybar restarted from a shell (e.g. tmux) that
+outlived a Hyprland restart carries a stale one, and the bar would freeze.
 """
 
 import fcntl
@@ -19,7 +23,7 @@ import subprocess
 import time
 
 RUNTIME = os.environ["XDG_RUNTIME_DIR"]
-EVENT_SOCKET = f"{RUNTIME}/hypr/{os.environ['HYPRLAND_INSTANCE_SIGNATURE']}/.socket2.sock"
+HYPR_DIR = f"{RUNTIME}/hypr"
 STATE_FILE = f"{RUNTIME}/waybar-ws"
 LOCK_FILE = f"{RUNTIME}/waybar-ws.lock"
 
@@ -70,9 +74,33 @@ def write_state():
     subprocess.run(["pkill", "-RTMIN+8", "-x", "waybar"])
 
 
+def connect():
+    """Connect to the event socket of the live Hyprland instance.
+
+    Tries the inherited signature first, then the other instance dirs, newest
+    first (dead instances leave their socket file behind, so connect to tell).
+    The env var is updated so hyprctl talks to the same instance.
+    """
+    current = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
+    others = sorted(
+        (d for d in os.listdir(HYPR_DIR) if d != current),
+        key=lambda d: os.path.getmtime(f"{HYPR_DIR}/{d}"),
+        reverse=True,
+    )
+    for sig in ([current] if current else []) + others:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            sock.connect(f"{HYPR_DIR}/{sig}/.socket2.sock")
+        except OSError:
+            sock.close()
+            continue
+        os.environ["HYPRLAND_INSTANCE_SIGNATURE"] = sig
+        return sock
+    raise OSError("no running Hyprland instance")
+
+
 def listen():
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        sock.connect(EVENT_SOCKET)
+    with connect() as sock:
         write_state()
         for line in sock.makefile():
             if line.split(">>", 1)[0] in EVENTS:
