@@ -17,8 +17,8 @@
     "modules-center": ["clock"],
     "modules-right": [
         "group/stats",
-        "group/connect",
-        "tray",
+        "network",
+        "group/apps",
         "custom/notification"
     ],
 
@@ -34,11 +34,11 @@
     },
     "group/stats": {
         "orientation": "horizontal",
-        "modules": ["cpu", "memory", "network#speed"]
+        "modules": ["cpu#ring", "cpu", "memory#ring", "memory", "network#speed"]
     },
-    "group/connect": {
+    "group/apps": {
         "orientation": "horizontal",
-        "modules": ["network", "bluetooth"]
+        "modules": ["bluetooth", "tray"]
     },
 
     // ── Left ─────────────────────────────────────────────────────────────
@@ -169,15 +169,30 @@
 
     // ── Right: stats ─────────────────────────────────────────────────────
 
+    // cpu#ring / memory#ring: the icon with a usage ring behind it. The ring is
+    // a CSS background picked by the p0..p100 state (rings/, scripts/gen-rings.py).
+    "cpu#ring": {
+        "interval": 2,
+        "format": "󰻠",
+        "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
+        "on-click": "kitty --class bar-htop -e htop"
+    },
     "cpu": {
         "interval": 2,
-        "format": "  {usage}%",
+        "format": "{usage}%",
         "states": { "warning": 70, "critical": 90 },
         "on-click": "kitty --class bar-htop -e htop"
     },
+    "memory#ring": {
+        "interval": 3,
+        "format": "󰍛",
+        "tooltip-format": "RAM {used:0.1f} / {total:0.1f} GiB\nSwap {swapUsed:0.1f} / {swapTotal:0.1f} GiB",
+        "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
+        "on-click": "kitty --class bar-htop -e htop --sort-key=PERCENT_MEM"
+    },
     "memory": {
         "interval": 3,
-        "format": "󰍛  {percentage}%",
+        "format": "{percentage}%",
         "tooltip-format": "RAM {used:0.1f} / {total:0.1f} GiB\nSwap {swapUsed:0.1f} / {swapTotal:0.1f} GiB",
         "states": { "warning": 75, "critical": 90 },
         "on-click": "kitty --class bar-htop -e htop --sort-key=PERCENT_MEM"
@@ -192,7 +207,7 @@
     // ── Right: connectivity ──────────────────────────────────────────────
 
     "network": {
-        "format-wifi": "{icon}  {essid}",
+        "format-wifi": "{icon}",
         "format-ethernet": "󰈀  Wired",
         "format-disconnected": "󰤭  Offline",
         "format-disabled": "󰖪  Off",
