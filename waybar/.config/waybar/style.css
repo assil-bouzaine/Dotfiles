@@ -30,6 +30,14 @@ window#waybar {
     color: @fg;
 }
 
+/* auto-hide (scripts/autohide.py): waybar adds .hidden on SIGUSR1 */
+window#waybar > box {
+    transition: opacity 150ms ease;
+}
+window#waybar.hidden > box {
+    opacity: 0;
+}
+
 tooltip {
     background: rgba(19, 19, 19, 0.95);
     border: 1px solid alpha(@cyan, 0.4);

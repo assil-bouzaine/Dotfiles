@@ -10,7 +10,13 @@
     "margin-right": 6,
     "spacing": 4,
 
+    // Auto-hide: scripts/autohide.py shows the bar while the cursor is at the
+    // top edge. Shown, it reserves its space and windows shrink to make room;
+    // hidden, the space is given back.
+    "start_hidden": true,
+
     "modules-left": [
+        "custom/autohide",
         "custom/launcher",
         "group/workspaces"
     ],
@@ -42,6 +48,13 @@
     },
 
     // ── Left ─────────────────────────────────────────────────────────────
+
+    // autohide prints nothing (so it's hidden); it only keeps the daemon alive.
+    "custom/autohide": {
+        "exec": "~/.config/waybar/scripts/autohide.py",
+        "restart-interval": 2,
+        "tooltip": false
+    },
 
     "custom/launcher": {
         "format": "",
