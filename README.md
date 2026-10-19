@@ -6,7 +6,7 @@ stow package that mirrors `$HOME`:
 | Package | Manages | Needs (beyond base) |
 |---|---|---|
 | `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), handy-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl |
-| `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, swaync + libnotify, htop, python, rofi, CaskaydiaCove Nerd Font |
+| `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, networkmanager-dmenu-git + rofi-bluetooth-git (AUR), swaync + libnotify, htop, python, rofi, CaskaydiaCove Nerd Font |
 | `swaync` | `~/.config/swaync/` (small toasts styled like the bar, 4s timeout, no grouping) | swaync |
 | `kitty` | `~/.config/kitty/` | kitty, CaskaydiaCove Nerd Font |
 | `tmux` | `~/.tmux.conf` | tmux, wl-clipboard (Wayland copy) |
@@ -67,7 +67,7 @@ sudo systemctl enable --now NetworkManager bluetooth
 ```bash
 git clone https://aur.archlinux.org/yay-bin.git /tmp/yay-bin
 (cd /tmp/yay-bin && makepkg -si)
-yay -S brave-bin handy-bin xwaylandvideobridge
+yay -S brave-bin handy-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git
 ```
 
 Optional: `hyprshutdown` (SUPER+M uses it if installed, otherwise plain exit),
@@ -146,8 +146,8 @@ it.
 | Keys | Does |
 |---|---|
 | SUPER + D | app launcher card |
-| SUPER + N | Wi-Fi card (pick a network, type the password, turn Wi-Fi on/off) |
-| SUPER + B | Bluetooth card (connect / disconnect, scan + pair, turn on/off) |
+| SUPER + N | Wi-Fi card: [networkmanager-dmenu](https://github.com/firecat53/networkmanager-dmenu) (pick a network, rescan, Wi-Fi on/off) |
+| SUPER + B | Bluetooth card: [rofi-bluetooth](https://github.com/nickclyde/rofi-bluetooth) (power, scan, pick a device to connect / pair / trust) |
 | SUPER + L | lock screen |
 | SUPER + 1…0 | workspaces (also clickable on the bar) |
 

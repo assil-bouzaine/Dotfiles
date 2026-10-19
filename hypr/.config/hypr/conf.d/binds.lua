@@ -18,8 +18,8 @@ hl.bind(mainMod .. " + M",      hl.dsp.exec_cmd("command -v hyprshutdown >/dev/n
 hl.bind(mainMod .. " + F",      hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + V",      hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd(cards .. "rofi -show drun -theme ~/.config/waybar/scripts/launcher.rasi"))
-hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/wifi-menu.sh"))
-hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/bluetooth-menu.sh"))
+hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd(cards .. "networkmanager_dmenu --config ~/.config/waybar/networkmanager-dmenu.ini"))
+hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(cards .. "rofi-bluetooth -theme ~/.config/waybar/scripts/card.rasi -l 8"))
 hl.bind(mainMod .. " + P",      hl.dsp.window.pseudo()) -- dwindle
 hl.bind("SUPER + L",            hl.dsp.exec_cmd("hyprlock"))
 

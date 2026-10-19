@@ -100,7 +100,12 @@ element {
 element normal.normal,
 element alternate.normal { background-color: transparent; }
 element selected.normal  { background-color: @hover; }
+/* Rows passed with -a (networkmanager-dmenu: the connected network) */
+element normal.active,
+element alternate.active { background-color: transparent; text-color: @cyan; }
+element selected.active  { background-color: @hover; text-color: @cyan; }
 element-text {
+    text-color: inherit;
     vertical-align: 0.5;
     cursor: inherit;
     highlight: bold #33ccff;
