@@ -66,7 +66,7 @@ tooltip label {
 
 /* modules inside a group get breathing room, the group draws the pill */
 #cpu, #memory, #network.speed,
-#network, #bluetooth {
+#network, #bluetooth, #custom-nightlight {
     padding: 0 6px;
 }
 
@@ -132,6 +132,8 @@ tooltip label {
 #network.disabled     { color: @dim; }
 #bluetooth.off,
 #bluetooth.disabled   { color: @dim; }
+#custom-nightlight     { color: @dim; }
+#custom-nightlight.on  { color: @yellow; }
 
 #tray > .needs-attention { background: alpha(@red, 0.3); border-radius: 6px; }
 
@@ -142,6 +144,6 @@ tooltip label {
 }
 
 #cpu:hover, #memory:hover, #network:hover, #bluetooth:hover,
-#custom-notification:hover {
+#custom-nightlight:hover, #custom-notification:hover {
     color: @green;
 }

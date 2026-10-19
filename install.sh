@@ -22,7 +22,7 @@ PACMAN_PKGS=(
     pipewire pipewire-pulse wireplumber brightnessctl playerctl
     wl-clipboard wtype zsh-syntax-highlighting
     waybar networkmanager nm-connection-editor bluez bluez-utils blueman
-    swaync libnotify htop python
+    swaync libnotify htop python hyprsunset
     ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd
 )
 AUR_PKGS=(brave-bin handy-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git)

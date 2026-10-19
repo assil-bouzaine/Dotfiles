@@ -44,7 +44,7 @@
     },
     "group/apps": {
         "orientation": "horizontal",
-        "modules": ["bluetooth", "tray"]
+        "modules": ["custom/nightlight", "bluetooth", "tray"]
     },
 
     // ── Left ─────────────────────────────────────────────────────────────
@@ -243,6 +243,17 @@
         "tooltip-format-enumerate-connected": "{device_alias}",
         "on-click": "pkill -x rofi || rofi-bluetooth -theme ~/.config/waybar/scripts/card.rasi -l 8",
         "on-click-right": "bluetoothctl show | grep -q 'Powered: yes' && bluetoothctl power off || { rfkill unblock bluetooth; sleep 1; bluetoothctl power on; }"
+    },
+
+    // Night light (hyprsunset), see scripts/nightlight.sh
+    "custom/nightlight": {
+        "exec": "~/.config/waybar/scripts/nightlight.sh",
+        "return-type": "json",
+        "signal": 9,
+        "interval": 30,
+        "on-click": "~/.config/waybar/scripts/nightlight.sh toggle",
+        "on-scroll-up": "~/.config/waybar/scripts/nightlight.sh warmer",
+        "on-scroll-down": "~/.config/waybar/scripts/nightlight.sh cooler"
     },
 
     "tray": {
