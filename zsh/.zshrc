@@ -213,3 +213,6 @@ export PATH=/home/mclovin/.opencode/bin:$PATH
 # Android SDK
 export ANDROID_HOME=$HOME/Android/sdk
 export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/35.0.0
+
+# Added by camber installer
+export PATH="$HOME/.camber/bin:$PATH"
