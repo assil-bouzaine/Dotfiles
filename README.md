@@ -17,7 +17,24 @@ Shared: CaskaydiaCove Nerd Font (kitty, waybar, rofi cards, notifications, lock
 screen); JetBrains Mono Nerd Font is the fallback.
 Details per app: `hyprland.md` covers the Hyprland Lua config and the Handy setup.
 
+## One-command install
+
+On a fresh Arch install, logged in as your user, in a normal terminal:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/assil-bouzaine/Dotfiles/main/install.sh)
+```
+
+`install.sh` does steps 1–5 below for you: packages (pacman + yay/AUR),
+services, zsh + oh-my-zsh, clone to `~/.dotfiles` + stow, the Handy
+input/uinput setup and the wallpapers. sudo asks for the password once. Files
+that are in stow's way are moved to `~/.dotfiles-backup/<time>/`, not deleted.
+It's safe to re-run (from a clone: `~/.dotfiles/install.sh`). Afterwards: log
+out and back in, then do the bits it prints (monitors, Handy settings).
+
 ## Fresh machine setup (copy-paste in order)
+
+The manual version of what `install.sh` does.
 
 Needs Arch Linux and **Hyprland ≥ 0.55** (the config is Lua). Run everything in
 a normal terminal. Commands with `sudo` need a real terminal to ask for the
