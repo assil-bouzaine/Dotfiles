@@ -52,6 +52,7 @@ tooltip label {
 
 #custom-launcher,
 #workspaces,
+#ws-apps,
 #clock,
 #stats,
 #network:not(.speed),
@@ -113,6 +114,8 @@ tooltip label {
     color: @fg;
     background: @pill-hover;
 }
+
+#ws-apps label { color: @fg; padding-left: 6px; }
 
 /* ── Center ─────────────────────────────────────────────────────────── */
 

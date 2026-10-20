@@ -18,7 +18,8 @@
     "modules-left": [
         "custom/autohide",
         "custom/launcher",
-        "group/workspaces"
+        "group/workspaces",
+        "group/ws-apps"
     ],
     "modules-center": ["clock"],
     "modules-right": [
@@ -36,6 +37,12 @@
             "custom/ws-daemon",
             "custom/ws-1", "custom/ws-2", "custom/ws-3", "custom/ws-4", "custom/ws-5",
             "custom/ws-6", "custom/ws-7", "custom/ws-8", "custom/ws-9", "custom/ws-10"
+        ]
+    },
+    "group/ws-apps": {
+        "orientation": "horizontal",
+        "modules": [
+            "image#app-1", "custom/app-1", "image#app-2", "custom/app-2"
         ]
     },
     "group/stats": {
@@ -158,6 +165,33 @@
         "on-click": "hyprctl dispatch 'hl.dsp.focus({ workspace = 10 })'",
         "on-scroll-up": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e-1\" })'",
         "on-scroll-down": "hyprctl dispatch 'hl.dsp.focus({ workspace = \"e+1\" })'"
+    },
+
+    // Apps on the focused workspace: real icon + name per slot, written by
+    // scripts/workspaces.py (icons: waybar-ws-icons, names: lines 11-12 of waybar-ws)
+    "image#app-1": {
+        "exec": "sed -n '1p' \"$XDG_RUNTIME_DIR/waybar-ws-icons\" 2>/dev/null",
+        "size": 18,
+        "interval": 1,     // not "signal": image modules on a signal freeze waybar 0.15
+        "tooltip": false
+    },
+    "custom/app-1": {
+        "exec": "sed -n '11p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once"
+    },
+    "image#app-2": {
+        "exec": "sed -n '2p' \"$XDG_RUNTIME_DIR/waybar-ws-icons\" 2>/dev/null",
+        "size": 18,
+        "interval": 1,     // not "signal": image modules on a signal freeze waybar 0.15
+        "tooltip": false
+    },
+    "custom/app-2": {
+        "exec": "sed -n '12p' \"$XDG_RUNTIME_DIR/waybar-ws\" 2>/dev/null",
+        "return-type": "json",
+        "signal": 8,
+        "interval": "once"
     },
 
     // ── Center ───────────────────────────────────────────────────────────

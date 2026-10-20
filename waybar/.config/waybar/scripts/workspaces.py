@@ -7,7 +7,9 @@ bar uses ten custom/ws-N modules instead (their on-click uses hl.dsp.focus).
 
 This daemon listens to Hyprland's event socket. On every workspace or window
 change it writes one JSON line per workspace to $XDG_RUNTIME_DIR/waybar-ws and
-sends SIGRTMIN+8 to waybar, so each custom/ws-N re-reads its own line.
+sends SIGRTMIN+8 to waybar, so each custom/ws-N re-reads its own line. The
+apps on the focused workspace (real icon from the icon theme + name) go to
+the slots of group/ws-apps the same way, see APP_SLOTS.
 Waybar starts it through the hidden custom/ws-daemon module.
 
 It finds the running Hyprland itself instead of trusting
@@ -21,14 +23,66 @@ import os
 import socket
 import subprocess
 import time
+import warnings
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)  # Gio.DesktopAppInfo
 
 RUNTIME = os.environ["XDG_RUNTIME_DIR"]
 HYPR_DIR = f"{RUNTIME}/hypr"
 STATE_FILE = f"{RUNTIME}/waybar-ws"
 LOCK_FILE = f"{RUNTIME}/waybar-ws.lock"
+ICON_FILE = f"{RUNTIME}/waybar-ws-icons"
 
 WORKSPACES = range(1, 11)   # same as the SUPER + [0-9] binds
 ALWAYS_SHOWN = range(1, 6)  # 6-10 only appear when they have windows or focus
+
+# Apps on the focused workspace: icon + name pairs in group/ws-apps, one
+# image#app-N (icon file path, from ICON_FILE) and custom/app-N (name, line
+# 10 + N of STATE_FILE) per slot. Empty slots hide themselves.
+APP_SLOTS = 2              # only the first two apps are shown
+ICON_SIZE = 64              # waybar scales it down; asks the theme for a sharp one
+ICON_THEME = "breeze"       # same as gtk-icon-theme-name
+FALLBACK_ICON = "application-x-executable"
+IGNORED_CLASSES = {"xwaylandvideobridge"}  # invisible helper windows
+DIVIDER = "<span color='#5c6370'>  │  </span>"  # @dim in style.css
+
+_icon_theme = Gtk.IconTheme.new()
+_icon_theme.set_custom_theme(ICON_THEME)
+_apps = {}  # window class -> (icon path, name), looked up once per class
+
+
+def app_info(cls):
+    """Icon file and name for a window class, from the app's .desktop entry.
+
+    The entry is the one whose StartupWMClass or file name matches the class
+    (case-insensitive); without one, the class itself is tried as icon name.
+    """
+    if cls not in _apps:
+        low = cls.lower()
+        entry = next(
+            (a for a in Gio.AppInfo.get_all()
+             if low in ((a.get_startup_wm_class() or "").lower(),
+                        (a.get_id() or "").lower().removesuffix(".desktop"))),
+            None,
+        )
+        icon_name = entry.get_string("Icon") if entry else None
+        name = entry.get_name() if entry else cls
+        info = None
+        for n in (icon_name, cls, low, FALLBACK_ICON):
+            if n and os.path.isabs(n):
+                path = n
+                break
+            if n and (info := _icon_theme.lookup_icon(n, ICON_SIZE, 0)):
+                path = info.get_filename()
+                break
+        _apps[cls] = (path, name)
+    return _apps[cls]
+
 
 # Events that can change what the bar shows
 EVENTS = {
@@ -67,11 +121,34 @@ def write_state():
         tooltip = f"Workspace {n}: {windows} window{'' if windows == 1 else 's'}"
         lines.append(json.dumps({"text": str(n), "class": cls, "tooltip": tooltip}))
 
-    tmp = STATE_FILE + ".tmp"
+    # The apps on the focused workspace, one per app, in the order their
+    # windows were opened
+    apps = []
+    for c in hyprctl("clients"):
+        if (c["workspace"]["id"] == focused and c["mapped"] and not c["hidden"]
+                and c["class"] not in IGNORED_CLASSES):
+            app = app_info(c["class"])
+            if app not in apps:
+                apps.append(app)
+    apps = apps[:APP_SLOTS]
+    names = [GLib.markup_escape_text(name) for _, name in apps]
+    names[:-1] = [n + DIVIDER for n in names[:-1]]  # divider before the next app's icon
+    names += [""] * (APP_SLOTS - len(names))
+    lines += [json.dumps({"text": n, "tooltip": False}) for n in names]
+
+    # An empty path leaves the old icon up, a missing file hides it
+    icons = [path for path, _ in apps] + ["none"] * (APP_SLOTS - len(apps))
+
+    write(STATE_FILE, lines)
+    write(ICON_FILE, icons)
+    subprocess.run(["pkill", "-RTMIN+8", "-x", "waybar"])
+
+
+def write(path, lines):
+    tmp = path + ".tmp"
     with open(tmp, "w") as f:
         f.write("\n".join(lines) + "\n")
-    os.replace(tmp, STATE_FILE)
-    subprocess.run(["pkill", "-RTMIN+8", "-x", "waybar"])
+    os.replace(tmp, path)
 
 
 def connect():
