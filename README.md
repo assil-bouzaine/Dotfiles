@@ -6,7 +6,7 @@ stow package that mirrors `$HOME`:
 | Package | Manages | Needs (beyond base) |
 |---|---|---|
 | `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), handy-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl |
-| `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, networkmanager-dmenu-git + rofi-bluetooth-git (AUR), swaync + libnotify, htop, python, hyprsunset, rofi, CaskaydiaCove Nerd Font |
+| `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, networkmanager-dmenu-git + rofi-bluetooth-git (AUR), swaync + libnotify, htop, python + python-gobject, hyprsunset, rofi, CaskaydiaCove Nerd Font |
 | `swaync` | `~/.config/swaync/` (small toasts styled like the bar, 4s timeout, no grouping) | swaync |
 | `kitty` | `~/.config/kitty/` | kitty, CaskaydiaCove Nerd Font |
 | `tmux` | `~/.tmux.conf` | tmux, wl-clipboard (Wayland copy) |
@@ -50,7 +50,7 @@ sudo pacman -S --needed git base-devel stow zsh tmux vim curl fzf lua \
   pipewire pipewire-pulse wireplumber brightnessctl playerctl \
   wl-clipboard wtype zsh-syntax-highlighting \
   waybar networkmanager nm-connection-editor bluez bluez-utils blueman \
-  swaync libnotify htop python hyprsunset \
+  swaync libnotify htop python python-gobject hyprsunset \
   ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd
 ```
 
@@ -68,7 +68,7 @@ What the less obvious ones are for:
 - **networkmanager, bluez, blueman, swaync:** what the bar's Wi-Fi,
   Bluetooth and notification buttons open. swaync starts by itself (D-Bus)
   on the first notification.
-- **python:** runs the bar's workspace buttons (`waybar/.../scripts/workspaces.py`).
+- **python + python-gobject:** run the bar's workspace buttons and the apps pill next to them (`waybar/.../scripts/workspaces.py`; python-gobject finds the app icons).
 - **htop:** opens when you click CPU / RAM on the bar.
 - **hyprsunset:** the bar's night light (moon button: click on/off, scroll warmer/cooler).
 
