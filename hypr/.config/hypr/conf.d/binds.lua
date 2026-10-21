@@ -70,6 +70,12 @@ hl.bind(mainMod .. " + SHIFT + S", hl.dsp.window.move({ workspace = "special:mag
 -- Change keyboard layout
 hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("hyprctl switchxkblayout all next"))
 
+-- Screenshots (grim + slurp + wl-copy)
+-- Print: full screen, SHIFT + Print: area. Both save to ~/Pictures and copy to the clipboard.
+local shot = 'mkdir -p ~/Pictures && f=~/Pictures/$(date +%F_%H-%M-%S).png && '
+hl.bind("Print",         hl.dsp.exec_cmd(shot .. 'grim "$f" && wl-copy < "$f"'))
+hl.bind("SHIFT + Print", hl.dsp.exec_cmd(shot .. 'grim -g "$(slurp)" "$f" && wl-copy < "$f"'))
+
 -- Scroll through existing workspaces with mainMod + scroll
 hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e+1" }))
 hl.bind(mainMod .. " + mouse_up",   hl.dsp.focus({ workspace = "e-1" }))
