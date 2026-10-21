@@ -20,7 +20,7 @@ PACMAN_PKGS=(
     xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
     kitty dolphin gwenview archlinux-xdg-menu plasma-integration polkit-kde-agent rofi gnome-keyring
     pipewire pipewire-pulse wireplumber brightnessctl playerctl
-    wl-clipboard wtype zsh-syntax-highlighting
+    wl-clipboard wtype grim slurp zsh-syntax-highlighting
     waybar networkmanager nm-connection-editor bluez bluez-utils blueman
     swaync libnotify htop python python-gobject hyprsunset
     ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd

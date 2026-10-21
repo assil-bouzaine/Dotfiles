@@ -5,7 +5,7 @@ stow package that mirrors `$HOME`:
 
 | Package | Manages | Needs (beyond base) |
 |---|---|---|
-| `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), handy-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl |
+| `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), handy-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl, grim + slurp + wl-clipboard (screenshots) |
 | `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, networkmanager-dmenu-git + rofi-bluetooth-git (AUR), swaync + libnotify, htop, python + python-gobject, hyprsunset, rofi, CaskaydiaCove Nerd Font |
 | `swaync` | `~/.config/swaync/` (small toasts styled like the bar, 4s timeout, no grouping) | swaync |
 | `kitty` | `~/.config/kitty/` | kitty, CaskaydiaCove Nerd Font |
@@ -48,7 +48,7 @@ sudo pacman -S --needed git base-devel stow zsh tmux vim curl fzf lua \
   xdg-desktop-portal-hyprland xdg-desktop-portal-gtk \
   kitty dolphin gwenview archlinux-xdg-menu plasma-integration polkit-kde-agent rofi gnome-keyring \
   pipewire pipewire-pulse wireplumber brightnessctl playerctl \
-  wl-clipboard wtype zsh-syntax-highlighting \
+  wl-clipboard wtype grim slurp zsh-syntax-highlighting \
   waybar networkmanager nm-connection-editor bluez bluez-utils blueman \
   swaync libnotify htop python python-gobject hyprsunset \
   ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd
@@ -58,6 +58,8 @@ What the less obvious ones are for:
 - **xdg-desktop-portal-hyprland / -gtk:** screen sharing (Meet etc.) and file pickers.
 - **pipewire-pulse, wireplumber:** audio and the volume keys (`wpctl`).
 - **wtype:** lets Handy type the transcribed text.
+- **grim, slurp:** the screenshot keys (Print = full screen, Shift+Print = area);
+  wl-clipboard copies the shot.
 - **fzf:** the fuzzy `cd` function in `.zshrc` and the vim fzf plugin.
 - **dolphin, gwenview, plasma-integration, archlinux-xdg-menu:** file manager
   and image viewer; the last two give them Breeze styling and a working
