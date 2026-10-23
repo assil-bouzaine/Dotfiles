@@ -105,6 +105,18 @@ hl.window_rule({
     group     = "barred",
 })
 
+-- Thunderbird always opens on workspace 4 (autostart launches it there silently).
+-- focus_on_activate: launching it again from rofi while it already runs
+-- jumps to the existing window instead of only marking it urgent.
+hl.window_rule({
+    name  = "thunderbird-workspace",
+    match = { class = "^(org\\.mozilla\\.Thunderbird|thunderbird)$" },
+
+    workspace         = "4",
+    group             = "barred",
+    focus_on_activate = true,
+})
+
 -- Workspace 2: floating layout (single rule — separate workspace_rule()
 -- calls for the same workspace overwrite each other). Normal gaps, so Brave
 -- doesn't fill the screen edge to edge.

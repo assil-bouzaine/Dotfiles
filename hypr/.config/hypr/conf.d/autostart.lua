@@ -12,4 +12,6 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("xwaylandvideobridge")
     hl.exec_cmd("brave --no-startup-window")
     hl.exec_cmd("handy --start-hidden") -- voice-to-text, toggled with SUPER + A
+    -- mail in the background: opens on workspace 4 without switching to it
+    hl.exec_cmd("thunderbird", { workspace = "4 silent" })
 end)
