@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Jump to the agent that needs you: waiting on approval/input first, then
+# finished. Repeated presses cycle through them.
+PATH=$HOME/.local/bin:$PATH
+current=$(tmux display -p '#{pane_id}')
+needy=$(agent-list | awk -F'\t' '$2 == "waiting" || $2 == "done" { print $1 }')
+# Next one after the current pane, wrapping around
+target=$(awk -v cur="$current" '
+    { p[NR] = $0 } $0 == cur { at = NR }
+    END { if (NR) print p[at % NR + 1] }' <<<"$needy")
+if [ -n "$target" ] && [ "$target" != "$current" ]; then
+    agent-jump "$target"
+else
+    tmux display-message "no agent needs you right now"
+fi

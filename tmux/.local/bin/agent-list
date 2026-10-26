@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Every claude/codex pane, the ones that need you first:
+#   pane_id <TAB> state <TAB> agent <TAB> session:window <TAB> project
+tmux list-panes -a -F '#{pane_id}	#{@agent_state}	#{@agent_name}	#{session_name}:#{window_index}	#{pane_current_path}	#{pane_current_command}' |
+    awk -F'\t' '
+        $3 == "" && $6 ~ /^(claude|codex)$/ { $3 = $6 }   # running, but no hook has fired yet
+        $3 == "" { next }
+        $2 == "" { $2 = "idle" }
+        {
+            rank = ($2 == "waiting") ? 0 : ($2 == "done") ? 1 : ($2 == "working") ? 2 : 3
+            n = split($5, path, "/")
+            print rank, $1, $2, $3, $4, path[n]
+        }' OFS='\t' | sort -t $'\t' -k1,1n -k5,5V | cut -f2-

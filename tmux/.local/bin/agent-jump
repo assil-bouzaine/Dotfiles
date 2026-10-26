@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Focus a pane, whatever session it lives in.
+tmux switch-client -t "$1" \; select-window -t "$1" \; select-pane -t "$1"

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Fuzzy-pick an open agent and jump to it. ctrl-r refreshes the list.
+PATH=$HOME/.local/bin:$PATH
+. picker-theme
+
+list() {
+    local pane state agent where project color label
+    agent-list | while IFS=$'\t' read -r pane state agent where project; do
+        case $state in
+            waiting) color=$c_red    label=' needs you' ;;
+            done)    color=$c_green  label=' finished ' ;;
+            working) color=$c_yellow label=' working  ' ;;
+            *)       color=$c_dim    label=' idle     ' ;;
+        esac
+        printf '%s\t%s%s%s  %s%-7s%s %s%-20s%s %s%s%s\n' "$pane" \
+            "$(fg "$color")" "$label" "$R" \
+            "$B" "$agent" "$R" \
+            "$(fg "$c_accent")" "$project" "$R" \
+            "$(fg "$c_dim")" "$where" "$R"
+    done
+}
+[ "$1" = --list ] && { list; exit; }
+
+pane=$(list | fzf "${PICKER_OPTS[@]}" --no-sort --ghost='search agents' \
+    --footer="$(hints enter jump ctrl-r refresh)" \
+    --bind="ctrl-r:reload($0 --list)" | cut -f1)
+[ -n "$pane" ] && agent-jump "$pane"
+exit 0

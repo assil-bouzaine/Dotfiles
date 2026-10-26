@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Status-bar counter of agents that need you (prefix Space jumps to them).
+~/.local/bin/agent-list | awk -F'\t' '
+    $2 == "waiting" { w++ }
+    $2 == "done"    { d++ }
+    END {
+        if (w) printf "#[fg=#f38ba8,bold]\uf059 %d needs you  ", w
+        if (d) printf "#[fg=#a6e3a1,nobold]\uf058 %d finished  ", d
+    }'
