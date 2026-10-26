@@ -5,6 +5,7 @@ tmux list-panes -a -F '#{pane_id}	#{@agent_state}	#{@agent_name}	#{session_name}
     awk -F'\t' '
         $3 == "" && $6 ~ /^(claude|codex)$/ { $3 = $6 }   # running, but no hook has fired yet
         $3 == "" { next }
+        $6 ~ /^-?(zsh|bash|fish|sh)$/ { next }           # agent exited, stale tag left on a shell pane
         $2 == "" { $2 = "idle" }
         {
             rank = ($2 == "waiting") ? 0 : ($2 == "done") ? 1 : ($2 == "working") ? 2 : 3

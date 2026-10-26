@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# agent-state <name> <working|waiting|done>
+# agent-state <name> <working|waiting|done|clear>
 # Tag the agent's tmux pane with its state (used by agent-list). Called from
-# the Claude/Codex hooks; a silent no-op outside tmux.
+# the Claude/Codex hooks; a silent no-op outside tmux. "clear" removes the tag
+# (SessionEnd), so an exited agent no longer shows in the status bar.
 [ -n "$TMUX_PANE" ] || exit 0
-tmux set -p -t "$TMUX_PANE" @agent_name "$1" \; set -p -t "$TMUX_PANE" @agent_state "$2" 2>/dev/null
+if [ "$2" = clear ]; then
+    tmux set -pu -t "$TMUX_PANE" @agent_name \; set -pu -t "$TMUX_PANE" @agent_state 2>/dev/null
+else
+    tmux set -p -t "$TMUX_PANE" @agent_name "$1" \; set -p -t "$TMUX_PANE" @agent_state "$2" 2>/dev/null
+fi
 exit 0
