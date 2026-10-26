@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fuzzy-pick a folder in ~/Projects and open agents on it as new windows
 # in the current tmux session.
-#   enter:  claude
-#   ctrl-b: claude + codex
+#   enter:  claude + codex
+#   ctrl-b: claude
 #   ctrl-x: codex
 PATH=$HOME/.local/bin:$PATH
 . picker-theme
@@ -32,16 +32,16 @@ list() {
 
 out=$(list | fzf "${PICKER_OPTS[@]}" --ghost='search projects' \
     --expect=ctrl-b,ctrl-x \
-    --footer="$(hints enter claude ctrl-b 'claude + codex' ctrl-x codex)")
+    --footer="$(hints enter 'claude + codex' ctrl-b claude ctrl-x codex)")
 key=$(head -n1 <<<"$out")
 name=$(sed -n 2p <<<"$out" | cut -f1)
 [ -n "$name" ] || exit 0
 dir=~/Projects/$name
 
 case $key in
-    ctrl-b) agents=(claude codex) ;;
+    ctrl-b) agents=(claude) ;;
     ctrl-x) agents=(codex) ;;
-    *)      agents=(claude) ;;
+    *)      agents=(claude codex) ;;
 esac
 
 # Start each agent from a shell so quitting it leaves a usable window behind.
