@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Searchable list of every tmux shortcut with its description: yours first
+# (bindings given a -N note in .tmux.conf), then tmux's built-in ones.
+PATH=$HOME/.local/bin:$PATH
+. picker-theme
+
+# table <TAB> key <TAB> description, for the bindings that have a note
+notes() {
+    for table in prefix root copy-mode-vi; do
+        "$@" list-keys -N -P '' -T "$table" 2>/dev/null |
+            awk -v t="$table" '{ key = $1; sub(/^ *[^ ]+ +/, ""); print t "\t" key "\t" $0 }'
+    done
+}
+defaults=$(notes tmux -L keys-defaults -f /dev/null start-server \;)
+
+{ notes tmux | awk -F'\t' -v defaults="$defaults" '
+    BEGIN { n = split(defaults, d, "\n"); for (i = 1; i <= n; i++) builtin[d[i]] = 1 }
+    {
+        mine = !($0 in builtin)
+        # Alt+1..9 "Go to window N": one row
+        if ($2 ~ /^M-[0-9]$/ && $3 ~ /^Go to window [0-9]$/) {
+            if (!seen_alt++) print mine "\t" $1 "\tM-1…9\tGo to window 1–9"
+            next
+        }
+        print mine "\t" $1 "\t" $2 "\t" $3
+    }'
+} | awk -F'\t' '
+    # Same description in the same table (e.g. copy mode y and C-c): one row
+    { k = $1 FS $2 FS $4 } !(k in keys) { order[++n] = k; keys[k] = $3; next } { keys[k] = keys[k] " / " $3 }
+    END { for (i = 1; i <= n; i++) { split(order[i], f, FS); print f[1] "\t" f[2] "\t" keys[order[i]] "\t" f[3] } }
+' | sort -t $'\t' -k1,1r -s | awk -F'\t' \
+    -v mine="$(fg "$c_accent")" -v builtin="$(fg "$c_fg")" -v dim="$(fg "$c_dim")" -v R="$R" -v B="$B" '
+    function pretty(k) { gsub(/M-/, "Alt+", k); gsub(/C-/, "Ctrl+", k); gsub(/S-/, "Shift+", k); return k }
+    {
+        where = ($2 == "prefix") ? "prefix " : ($2 == "copy-mode-vi") ? "copy mode " : ""
+        key = where pretty($3)
+        printf "%s\t%s%s%-21s%s  %s%s%s  %s%s%s\n", $3, ($1 ? mine B : builtin), "", key, R,
+            ($1 ? "" : dim), $4, R, dim, ($1 ? "yours" : ""), R
+    }' |
+    fzf "${PICKER_OPTS[@]}" --exact --no-sort --ghost='search shortcuts' \
+        --footer="$(hints esc close)" >/dev/null
+exit 0

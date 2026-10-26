@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Toggle a floating scratch shell for the current session. It lives in a
+# hidden session (_scratch_<name>), so it keeps running while it is closed.
+session=$(tmux display -p '#{session_name}')
+if [[ $session == _scratch_* ]]; then
+    tmux detach-client          # pressed inside the popup: hide it
+    exit
+fi
+name=_scratch_$session
+dir=$(tmux display -p '#{pane_current_path}')
+socket=$(tmux display -p '#{socket_path}')   # same server, not whatever $TMUX-less tmux picks
+tmux display-popup -E -w 85% -h 75% -d "$dir" -T "#[fg=#89b4fa,bold] 󰆍 scratch " \
+    "TMUX= tmux -S '$socket' new-session -A -s '$name' -c '$dir' \; set -t '$name' status off"
