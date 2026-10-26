@@ -16,9 +16,16 @@
   "notification-inline-replies": false,
   "notification-body-image-height": 80,
   "notification-body-image-width": 160,
-  "timeout": 4,
-  "timeout-low": 2,
+  "timeout": 10,
+  "timeout-low": 10,
   "timeout-critical": 0,
+  "notification-visibility": {
+    "thunderbird": {
+      "app-name": "(?i)^(mozilla )?thunderbird$",
+      "state": "enabled",
+      "override-urgency": "normal"
+    }
+  },
   "fit-to-screen": false,
   "relative-timestamps": true,
   "control-center-width": 360,
