@@ -43,6 +43,24 @@ hl.window_rule({
     group     = "set",
 })
 
+-- T3 Code always opens on workspace 9, as a tab group
+hl.window_rule({
+    name  = "t3code-workspace",
+    match = { class = "^(com\\.t3tools\\.T3Code)$" },
+
+    workspace = "9",
+    group     = "set",
+})
+
+-- Every window on workspace 9 is a tab in the group instead of tiling
+-- (auto_group drops it into the focused group, otherwise it starts one)
+hl.window_rule({
+    name  = "workspace-9-group",
+    match = { workspace = "9" },
+
+    group = "set",
+})
+
 -- Dolphin always opens on workspace 3
 hl.window_rule({
     name  = "dolphin",
