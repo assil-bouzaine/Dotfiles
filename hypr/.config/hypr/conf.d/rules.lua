@@ -113,14 +113,17 @@ hl.window_rule({
     workspace = "8",
 })
 
+-- Discord + Spotify share one tab group on workspace 4 (switch with SUPER + TAB).
 -- Spotify reports its class as "Spotify" (capital S); match both spellings.
--- "barred" keeps it out of whatever group is focused when it opens.
+-- "lock" keeps other apps (Thunderbird) out of the group; "invade" lets the
+-- second of the two join the first one's locked group.
 hl.window_rule({
-    name  = "spotify-workspace",
-    match = { class = "^([Ss]potify)$" },
+    name  = "discord-spotify-workspace",
+    match = { class = "^([Ss]potify|discord)$" },
 
     workspace = "4",
-    group     = "barred",
+    group     = "set lock invade",
+    tile      = true, -- Discord sometimes opens floating & small; force tiling
 })
 
 -- Thunderbird always opens on workspace 4 (autostart launches it there silently).
@@ -206,4 +209,14 @@ hl.window_rule({
     float  = true,
     center = true,
     size   = "800 520",
+})
+
+-- Volume Control (pavucontrol) always floats, small and centered
+hl.window_rule({
+    name  = "pavucontrol-floating",
+    match = { class = "^(org\\.pulseaudio\\.pavucontrol|pavucontrol)$" },
+
+    float  = true,
+    center = true,
+    size   = "600 400",
 })
