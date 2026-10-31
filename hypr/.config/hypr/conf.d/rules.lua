@@ -117,13 +117,36 @@ hl.window_rule({
 -- Spotify reports its class as "Spotify" (capital S); match both spellings.
 -- "lock" keeps other apps (Thunderbird) out of the group; "invade" lets the
 -- second of the two join the first one's locked group.
+-- Discord's main window has initial title "Discord"; matching on it keeps
+-- the stream pop-out (below) out of the group.
 hl.window_rule({
-    name  = "discord-spotify-workspace",
-    match = { class = "^([Ss]potify|discord)$" },
+    name  = "spotify-workspace",
+    match = { class = "^([Ss]potify)$" },
+
+    workspace = "4",
+    group     = "set lock invade",
+})
+
+hl.window_rule({
+    name  = "discord-workspace",
+    match = { class = "^(discord)$", initial_title = "^(Discord)$" },
 
     workspace = "4",
     group     = "set lock invade",
     tile      = true, -- Discord sometimes opens floating & small; force tiling
+})
+
+-- Discord stream pop-out: small float in the bottom-right corner, pinned so
+-- it follows you to every workspace until you close it.
+hl.window_rule({
+    name  = "discord-popout-pinned",
+    match = { class = "^(discord)$", initial_title = "^(Discord Popout)$" },
+
+    float = true,
+    pin   = true,
+    group = "barred",
+    size  = "480 270",
+    move  = "monitor_w-500 monitor_h-290",
 })
 
 -- Thunderbird always opens on workspace 4 (autostart launches it there silently).
