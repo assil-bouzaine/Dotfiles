@@ -95,86 +95,29 @@ bezier = "easeOutQuint", style = "popin 87%" })`.
 - **`hyprctl dispatch` takes Lua now.** `hyprctl dispatch dpms off` silently
   fails — use `hyprctl dispatch 'hl.dsp.dpms({ action = "off" })'` (also in
   scripts / hypridle.conf). Full API stubs: `/usr/share/hypr/stubs/hl.meta.lua`.
-- **Apps can't grab global shortcuts on Wayland** (e.g. Handy says every key
-  is "already in use"). See the Handy section below for the fix.
+- **The GlobalShortcuts portal never assigns keys.** Apps that ask for a
+  shortcut (e.g. Hex: "the desktop did not grant this shortcut") get nothing.
+  Bind the app's CLI in `binds.lua` instead (see the Hex section below).
 - **Keysym names, not characters.** `;` → `semicolon`, `Return` → `RETURN`.
 - **Two binds on the same key both fire.** Use one bind with a Lua function
   instead (see `SUPER+TAB` in `binds.lua`: next group tab, else cycle windows).
 - **`initial_class` vs `class`** in window-rule matches: both accepted, but if a
   rule ever stops matching, try switching to `class`.
 
-## Handy (voice-to-text) on a new machine
+## Hex (voice-to-text)
 
-Hold **SUPER + A**, talk, let go → the text is pasted where the cursor is.
-Handy's normal shortcut mode is X11-only, so on Hyprland it needs the steps
-below (it reads the keyboard directly instead).
+AUR package `hex-bin`; it runs as a systemd user service. Open it once with
+`hex app` and download a model. Hyprland's portal never gives Hex the keys it
+asks for, so `conf.d/binds.lua` calls Hex's CLI instead:
 
-1. **Install Handy** (Arch): `yay -S handy-bin`. Open it once, finish the
-   setup, download a model, then quit it from the tray.
+- Hold **SUPER + Z**, talk, let go → `hex dictation start` / `stop`
+  (the stop bind uses `{ release = true }`; a bare `Z` release bind with
+  `non_consuming` also stops it, so letting go of SUPER first is fine).
+- **SUPER + SHIFT + Z** → `hex paste-last`
+- **SUPER + ALT + Z** → `hex dictation cancel`
 
-2. **Join the `input` group** (lets Handy read the keyboard). Run in a normal
-   terminal, not Claude's `!` prompt, since sudo needs a password:
-   ```sh
-   sudo usermod -aG input "$USER"
-   ```
-
-3. **Allow the `input` group to use `/dev/uinput`** (Handy needs it to
-   re-send keys it doesn't use). Without `static_node` and the
-   modules-load file it only works until the next reboot:
-   ```sh
-   echo 'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"' | sudo tee /etc/udev/rules.d/99-uinput.rules
-   echo uinput | sudo tee /etc/modules-load.d/uinput.conf
-   sudo modprobe uinput
-   sudo udevadm control --reload
-   sudo udevadm trigger --name-match=uinput
-   ```
-
-4. **Log out and back in** (group changes need a new session). Check:
-   ```sh
-   id -nG              # must list: input
-   ls -l /dev/uinput   # must show: crw-rw---- root input
-   ```
-
-5. **Set Handy's keyboard mode and shortcut.** With Handy closed
-   (`pkill -x handy`), edit `~/.local/share/com.pais.handy/settings_store.json`:
-   - `"keyboard_implementation": "handy_keys"`
-   - `bindings → transcribe → "current_binding": "super+a"`
-   - `"shortcut_activation": "push_to_talk"` (hold to talk)
-   - `"overlay_style": "minimal"` (small bar at the bottom while recording;
-     `"none"` hides it)
-
-   Or set the same options in Handy's settings window if they're shown there.
-
-6. **Hyprland side** (already in these dotfiles, nothing to do after
-   `stow hypr`):
-   - `conf.d/binds.lua`: `SUPER + A` → `hl.dsp.no_op()`, which keeps the key
-     away from other apps. Handy still sees it.
-   - `conf.d/autostart.lua`: `handy --start-hidden` at login.
-
-7. **Start it and test:**
-   `hyprctl dispatch 'hl.dsp.exec_cmd("handy --start-hidden")'`, click into a
-   text box, then hold SUPER + A, talk, and let go.
-
-**Updating Handy** (it's the AUR package `handy-bin`):
-```sh
-yay -Syu handy-bin                                   # or plain `yay` to update everything
-pkill -x handy; hyprctl dispatch 'hl.dsp.exec_cmd("handy --start-hidden")'   # restart (or relog)
-pacman -Q handy-bin                                  # check the version
-```
-Don't use Handy's built-in "update" button. It downloads the .deb/AppImage
-build and fights with pacman. Settings, models and the udev/group setup
-survive updates. If SUPER + A stops working after one, check the log below
-(a new version may have renamed `keyboard_implementation` or other settings).
-
-**If it doesn't work**, check `~/.local/share/com.pais.handy/logs/handy.log`.
-Its times are UTC, so they can be an hour or more off from your clock.
-- `hotkey blocking requires write access to /dev/uinput` → step 3 or 4 missed.
-- `Shortcut '...' is already in use` for every key → still on `tauri` mode (step 5).
-- `sample count: 0` / `result is empty` → mic too quiet:
-  `wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 1.0`.
-- Text transcribed but nothing appears → in Handy, change the paste method
-  (`direct` types with `wtype`; `ctrl_v` pastes from the clipboard. Brave and
-  VSCode are more reliable with it, but terminals need Ctrl+Shift+V).
+Hex types the text with `wtype`. Check it with `hex status` or
+`journalctl --user -u hex`.
 
 ## Rollback
 

@@ -25,7 +25,7 @@ PACMAN_PKGS=(
     swaync libnotify htop python python-gobject hyprsunset
     ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd
 )
-AUR_PKGS=(brave-bin handy-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git)
+AUR_PKGS=(brave-bin hex-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git)
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -51,7 +51,6 @@ main() {
     aur
     zsh_setup
     stow_all
-    handy_input
     wallpapers
     finish
 }
@@ -135,20 +134,6 @@ stow_all() {
     stow -d "$DOTFILES" -t "$HOME" --restow "${PACKAGES[@]}"
 }
 
-# Handy reads the keyboard directly on Hyprland (hyprland.md, steps 2–3)
-handy_input() {
-    step "Handy: input group + /dev/uinput"
-    id -nG "$USER" | grep -qw input || { sudo usermod -aG input "$USER"; info "added $USER to input"; }
-    local rule='KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"'
-    if [[ $(cat /etc/udev/rules.d/99-uinput.rules 2>/dev/null) != "$rule" ]]; then
-        echo "$rule" | sudo tee /etc/udev/rules.d/99-uinput.rules >/dev/null
-        echo uinput | sudo tee /etc/modules-load.d/uinput.conf >/dev/null
-        sudo modprobe uinput
-        sudo udevadm control --reload
-        sudo udevadm trigger --name-match=uinput
-    fi
-}
-
 wallpapers() {
     step "Wallpapers"
     "$DOTFILES/hypr/.config/hypr/scripts/get-wallpapers.sh" || warn "some wallpapers failed, re-run later"
@@ -158,7 +143,7 @@ finish() {
     step "Done. Still manual:"
     info "- Log out and back in (zsh shell, input group), then start Hyprland."
     info "- Monitors: check 'hyprctl monitors', fix conf.d/monitors.lua."
-    info "- Handy: open it once, download a model, then set its options (hyprland.md, step 5)."
+    info "- Hex: open it once (hex app) and download a model; keys are in hyprland.md."
     if [[ $HOME != /home/mclovin ]]; then
         warn "hyprlock.conf and .zshrc hard-code /home/mclovin; fix those paths for $HOME."
     fi

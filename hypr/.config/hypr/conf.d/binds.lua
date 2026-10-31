@@ -23,10 +23,17 @@ hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(cards .. "rofi-bluetooth -theme 
 hl.bind(mainMod .. " + P",      hl.dsp.window.pseudo()) -- dwindle
 hl.bind("SUPER + L",            hl.dsp.exec_cmd("hyprlock"))
 
--- Handy voice-to-text: SUPER + A, same key as Handy's own shortcut.
--- Handy reads it straight from the keyboard (handy_keys mode, needs the
--- `input` group); this no-op bind only stops the key reaching other apps.
-hl.bind(mainMod .. " + A", hl.dsp.no_op())
+-- Hex dictation (Anomaly). Hyprland's GlobalShortcuts portal never assigns
+-- keys to app shortcuts, so Hex reports "desktop did not grant this shortcut".
+-- Bind Hex's CLI instead: hold SUPER + Z to talk, release to transcribe+paste.
+hl.bind(mainMod .. " + Z",         hl.dsp.exec_cmd("hex dictation start"))
+hl.bind(mainMod .. " + Z",         hl.dsp.exec_cmd("hex dictation stop"), { release = true })
+-- Fallback when SUPER is let go before Z: the SUPER + Z release bind no longer
+-- matches, so also stop on a bare Z release. non_consuming keeps Z typing
+-- normally; `hex dictation stop` does nothing while Hex is idle.
+hl.bind("Z", hl.dsp.exec_cmd("hex dictation stop"), { release = true, non_consuming = true })
+hl.bind(mainMod .. " + SHIFT + Z", hl.dsp.exec_cmd("hex paste-last"))
+hl.bind(mainMod .. " + ALT + Z",   hl.dsp.exec_cmd("hex dictation cancel"))
 
 -- Window groups (tabbed windows)
 hl.bind(mainMod .. " + G", hl.dsp.group.toggle())

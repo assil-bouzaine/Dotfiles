@@ -5,7 +5,7 @@ stow package that mirrors `$HOME`:
 
 | Package | Manages | Needs (beyond base) |
 |---|---|---|
-| `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), handy-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl, grim + slurp + wl-clipboard (screenshots) |
+| `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), hex-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl, grim + slurp + wl-clipboard (screenshots) |
 | `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, networkmanager-dmenu-git + rofi-bluetooth-git (AUR), swaync + libnotify, htop, python + python-gobject, hyprsunset, rofi, CaskaydiaCove Nerd Font |
 | `swaync` | `~/.config/swaync/` (small toasts styled like the bar, 4s timeout, no grouping) | swaync |
 | `kitty` | `~/.config/kitty/` | kitty, CaskaydiaCove Nerd Font |
@@ -15,7 +15,7 @@ stow package that mirrors `$HOME`:
 
 Shared: CaskaydiaCove Nerd Font (kitty, waybar, rofi cards, notifications, lock
 screen); JetBrains Mono Nerd Font is the fallback.
-Details per app: `hyprland.md` covers the Hyprland Lua config and the Handy setup.
+Details per app: `hyprland.md` covers the Hyprland Lua config and the Hex dictation setup.
 
 ## One-command install
 
@@ -26,11 +26,11 @@ bash <(curl -fsSL https://raw.githubusercontent.com/assil-bouzaine/Dotfiles/main
 ```
 
 `install.sh` does steps 1–5 below for you: packages (pacman + yay/AUR),
-services, zsh + oh-my-zsh, clone to `~/.dotfiles` + stow, the Handy
-input/uinput setup and the wallpapers. sudo asks for the password once. Files
+services, zsh + oh-my-zsh, clone to `~/.dotfiles` + stow, and the
+wallpapers. sudo asks for the password once. Files
 that are in stow's way are moved to `~/.dotfiles-backup/<time>/`, not deleted.
 It's safe to re-run (from a clone: `~/.dotfiles/install.sh`). Afterwards: log
-out and back in, then do the bits it prints (monitors, Handy settings).
+out and back in, then do the bits it prints (monitors, Hex model).
 
 ## Fresh machine setup (copy-paste in order)
 
@@ -57,7 +57,7 @@ sudo pacman -S --needed git base-devel stow zsh tmux vim curl fzf lua \
 What the less obvious ones are for:
 - **xdg-desktop-portal-hyprland / -gtk:** screen sharing (Meet etc.) and file pickers.
 - **pipewire-pulse, wireplumber:** audio and the volume keys (`wpctl`).
-- **wtype:** lets Handy type the transcribed text.
+- **wtype:** lets Hex type the transcribed text.
 - **grim, slurp:** the screenshot keys (Print = full screen, Shift+Print = area);
   wl-clipboard copies the shot.
 - **fzf:** the fuzzy `cd` function in `.zshrc` and the vim fzf plugin.
@@ -87,7 +87,7 @@ sudo systemctl enable --now NetworkManager bluetooth
 ```bash
 git clone https://aur.archlinux.org/yay-bin.git /tmp/yay-bin
 (cd /tmp/yay-bin && makepkg -si)
-yay -S brave-bin handy-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git
+yay -S brave-bin hex-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git
 ```
 
 Optional: `hyprshutdown` (SUPER+M uses it if installed, otherwise plain exit),
@@ -133,9 +133,8 @@ symlink (stow folds whole directories when the target doesn't exist yet).
   if your username differs.
 - **Monitors:** `conf.d/monitors.lua` assumes `1366x768@60` + `HDMI-A-1` on the
   right. Run `hyprctl monitors`, fix names/modes, `hyprctl reload`.
-- **Handy (voice-to-text, SUPER+A):** needs the `input` group, a udev rule
-  and a few Handy settings. Follow the step-by-step guide in `hyprland.md`
-  ("Handy (voice-to-text) on a new machine").
+- **Hex (voice-to-text, hold SUPER+Z):** open it once and download a model.
+  The keys are Hyprland binds, see `hyprland.md` ("Hex (voice-to-text)").
 - **Optional extras referenced in `.zshrc`:** nvm (`~/.nvm`), Android SDK
   (`~/Android/sdk`), `~/.local/bin`, `~/.opencode/bin`. Only needed if you use them.
 
@@ -152,8 +151,8 @@ hyprctl binds | grep -c modmask   # expect 59
 - **kitty:** every new window auto-attaches to the tmux session `main`.
 
 First login autostarts: `hypridle`, waybar, the wallpaper cycler,
-gnome-keyring, xwaylandvideobridge, brave (hidden window) and handy (hidden,
-tray icon).
+gnome-keyring, xwaylandvideobridge, and brave (hidden window). Hex runs as its
+own systemd user service (`hex.service`).
 
 ## Bar, cards and shortcuts
 
