@@ -92,6 +92,10 @@ hl.bind("XF86AudioMicMute",      hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_
 hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd("brightnessctl -d intel_backlight set +10%"),      { locked = true, repeating = true })
 hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("brightnessctl -d intel_backlight set 10%-"),       { locked = true, repeating = true })
 
+-- Switch sound between laptop speakers and the monitor's headphone jack
+-- (H for headphones; was SHIFT + O, too easy to confuse with SHIFT + 0)
+hl.bind(mainMod .. " + SHIFT + H", hl.dsp.exec_cmd("~/.config/hypr/scripts/audio-output-toggle.sh"))
+
 -- Requires playerctl (were `bindl`)
 hl.bind("XF86AudioNext",  hl.dsp.exec_cmd("playerctl next"),       { locked = true })
 hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause"), { locked = true })
