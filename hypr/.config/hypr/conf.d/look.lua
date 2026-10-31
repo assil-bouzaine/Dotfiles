@@ -42,7 +42,8 @@ hl.config({
         blur = {
             enabled  = true,
             size     = 5,
-            passes   = 3,
+            passes   = 1,
+            xray     = true, -- waybar blurs only the (cached) wallpaper: much cheaper
             vibrancy = 0.1696,
         },
     },
@@ -61,7 +62,7 @@ hl.config({
     group = {
         groupbar = {
             enabled       = false, -- u can change this to true to see a blue line
-            font_size     = 0,     -- hides the title text
+            font_size     = 2,     -- minimum allowed since 0.57; titles hidden by render_titles
             height        = 1,     -- thin line height
             gradients     = false, -- no gradient, flat color
             render_titles = false, -- explicitly disable title rendering
@@ -80,5 +81,11 @@ hl.config({
     misc = {
         force_default_wallpaper = 0,     -- 0 = no anime mascot wallpaper (wallpaper-cycle.sh sets ours)
         disable_hyprland_logo   = false, -- If true disables the random hyprland logo / anime girl background. :(
+    },
+
+    -- https://wiki.hypr.land/configuring/core/config-options/#render
+    render = {
+        cm_auto_hdr = 0, -- MAG 255F has no HDR over HDMI; auto-HDR on fullscreen video blanked it and broke colors
+        direct_scanout = 2, -- fullscreen games/video bypass the compositor
     },
 })

@@ -138,7 +138,14 @@ hl.window_rule({
 -- Workspace 2: floating layout (single rule — separate workspace_rule()
 -- calls for the same workspace overwrite each other). Normal gaps, so Brave
 -- doesn't fill the screen edge to edge.
-hl.workspace_rule({ workspace = "2", layout = "floating" })
+hl.workspace_rule({ workspace = "2", layout = "floating", monitor = "HDMI-A-1", default = true })
+
+-- Workspace 1 lives on the laptop, 2-10 on the MSI. When the MSI is
+-- unplugged they fall back to the laptop and move back when it returns.
+hl.workspace_rule({ workspace = "1", monitor = "eDP-1", default = true })
+for i = 3, 10 do
+    hl.workspace_rule({ workspace = tostring(i), monitor = "HDMI-A-1" })
+end
 
 hl.window_rule({
     name  = "xwayland-video-bridge-fixes",

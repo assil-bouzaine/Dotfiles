@@ -51,7 +51,7 @@ while true; do
             --transition-angle "$((RANDOM % 360))"
 
         # Wait before switching
-        sleep 60
+        sleep 600 # 10 min: transitions are CPU-rendered on both screens
     done
 
     # Reshuffle after cycling through all images

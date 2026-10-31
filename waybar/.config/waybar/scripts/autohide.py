@@ -25,7 +25,7 @@ RUNTIME = os.environ["XDG_RUNTIME_DIR"]
 HYPR_DIR = f"{RUNTIME}/hypr"
 LOCK_FILE = f"{RUNTIME}/waybar-autohide.lock"
 
-POLL = 0.05        # seconds between cursor checks
+POLL = 0.1         # seconds between cursor checks
 EDGE = 1           # px from the monitor top that reveal the bar
 REVEAL_DELAY = 0.1 # cursor must rest on the edge this long (stops flicker on overshoot)
 BAR_AREA = 40      # px from the top that keep it shown: margin-top 4 + height 30 + slack
