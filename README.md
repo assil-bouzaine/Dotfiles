@@ -7,11 +7,11 @@ stow package that mirrors `$HOME`:
 |---|---|---|
 | `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), hex-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl, grim + slurp + wl-clipboard (screenshots) |
 | `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, networkmanager-dmenu-git + rofi-bluetooth-git (AUR), swaync + libnotify, htop, python + python-gobject, hyprsunset, rofi, CaskaydiaCove Nerd Font |
-| `swaync` | `~/.config/swaync/` (small toasts styled like the bar, 4s timeout, no grouping) | swaync |
+| `swaync` | `~/.config/swaync/` (small toasts styled like the bar, 10s timeout, no grouping) | swaync |
 | `kitty` | `~/.config/kitty/` | kitty, CaskaydiaCove Nerd Font |
 | `tmux` | `~/.tmux.conf` | tmux, wl-clipboard (Wayland copy) |
 | `vim` | `~/.vimrc` | vim |
-| `zsh` | `~/.zshrc` | zsh, oh-my-zsh + plugins (see below), fzf, zsh-syntax-highlighting |
+| `zsh` | `~/.zshrc` | zsh, oh-my-zsh + plugins (see below), fzf, fd (fast Ctrl+F folder search, falls back to find), zsh-syntax-highlighting |
 
 Shared: CaskaydiaCove Nerd Font (kitty, waybar, rofi cards, notifications, lock
 screen); JetBrains Mono Nerd Font is the fallback.
@@ -43,7 +43,7 @@ password, so don't run them through Claude's `!` prompt.
 ### 1. Base packages (official repos)
 
 ```bash
-sudo pacman -S --needed git base-devel stow zsh tmux vim curl fzf lua \
+sudo pacman -S --needed git base-devel stow zsh tmux vim curl fzf fd lua \
   hyprland hypridle hyprlock awww \
   xdg-desktop-portal-hyprland xdg-desktop-portal-gtk \
   kitty dolphin gwenview archlinux-xdg-menu plasma-integration polkit-kde-agent rofi gnome-keyring \
@@ -128,7 +128,7 @@ symlink (stow folds whole directories when the target doesn't exist yet).
   ```bash
   ~/.config/hypr/scripts/get-wallpapers.sh
   ```
-  `wallpaper-cycle.sh` rotates them every 60s. `hyprlock.conf` uses
+  `wallpaper-cycle.sh` rotates them every 10 minutes. `hyprlock.conf` uses
   `wallhaven-2e6wgx.jpg` and hard-codes `/home/mclovin/...`, so fix that path
   if your username differs.
 - **Monitors:** `conf.d/monitors.lua` assumes `1366x768@60` + `HDMI-A-1` on the
