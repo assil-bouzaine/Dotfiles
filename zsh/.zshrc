@@ -74,54 +74,54 @@ ZSH_THEME="robbyrussell"
 # Add wisely, as too many plugins slow down shell startup.
 plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
 
-# enable syntax-highlighting
-if [ -f /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]; then
-    . /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-    ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets pattern)
-    ZSH_HIGHLIGHT_STYLES[default]=none
-    ZSH_HIGHLIGHT_STYLES[unknown-token]=underline
-    ZSH_HIGHLIGHT_STYLES[reserved-word]=fg=cyan,bold
-    ZSH_HIGHLIGHT_STYLES[suffix-alias]=fg=green,underline
-    ZSH_HIGHLIGHT_STYLES[global-alias]=fg=green,bold
-    ZSH_HIGHLIGHT_STYLES[precommand]=fg=green,underline
-    ZSH_HIGHLIGHT_STYLES[commandseparator]=fg=blue,bold
-    ZSH_HIGHLIGHT_STYLES[autodirectory]=fg=green,underline
-    ZSH_HIGHLIGHT_STYLES[path]=bold
-    ZSH_HIGHLIGHT_STYLES[path_pathseparator]=
-    ZSH_HIGHLIGHT_STYLES[path_prefix_pathseparator]=
-    ZSH_HIGHLIGHT_STYLES[globbing]=fg=blue,bold
-    ZSH_HIGHLIGHT_STYLES[history-expansion]=fg=blue,bold
-    ZSH_HIGHLIGHT_STYLES[command-substitution]=none
-    ZSH_HIGHLIGHT_STYLES[command-substitution-delimiter]=fg=magenta,bold
-    ZSH_HIGHLIGHT_STYLES[process-substitution]=none
-    ZSH_HIGHLIGHT_STYLES[process-substitution-delimiter]=fg=magenta,bold
-    ZSH_HIGHLIGHT_STYLES[single-hyphen-option]=fg=green
-    ZSH_HIGHLIGHT_STYLES[double-hyphen-option]=fg=green
-    ZSH_HIGHLIGHT_STYLES[back-quoted-argument]=none
-    ZSH_HIGHLIGHT_STYLES[back-quoted-argument-delimiter]=fg=blue,bold
-    ZSH_HIGHLIGHT_STYLES[single-quoted-argument]=fg=yellow
-    ZSH_HIGHLIGHT_STYLES[double-quoted-argument]=fg=yellow
-    ZSH_HIGHLIGHT_STYLES[dollar-quoted-argument]=fg=yellow
-    ZSH_HIGHLIGHT_STYLES[rc-quote]=fg=magenta
-    ZSH_HIGHLIGHT_STYLES[dollar-double-quoted-argument]=fg=magenta,bold
-    ZSH_HIGHLIGHT_STYLES[back-double-quoted-argument]=fg=magenta,bold
-    ZSH_HIGHLIGHT_STYLES[back-dollar-quoted-argument]=fg=magenta,bold
-    ZSH_HIGHLIGHT_STYLES[assign]=none
-    ZSH_HIGHLIGHT_STYLES[redirection]=fg=blue,bold
-    ZSH_HIGHLIGHT_STYLES[comment]=fg=black,bold
-    ZSH_HIGHLIGHT_STYLES[named-fd]=none
-    ZSH_HIGHLIGHT_STYLES[numeric-fd]=none
-    ZSH_HIGHLIGHT_STYLES[arg0]=fg=cyan
-    ZSH_HIGHLIGHT_STYLES[bracket-error]=fg=red,bold
-    ZSH_HIGHLIGHT_STYLES[bracket-level-1]=fg=blue,bold
-    ZSH_HIGHLIGHT_STYLES[bracket-level-2]=fg=green,bold
-    ZSH_HIGHLIGHT_STYLES[bracket-level-3]=fg=magenta,bold
-    ZSH_HIGHLIGHT_STYLES[bracket-level-4]=fg=yellow,bold
-    ZSH_HIGHLIGHT_STYLES[bracket-level-5]=fg=cyan,bold
-    ZSH_HIGHLIGHT_STYLES[cursor-matchingbracket]=standout
-fi
 
 source $ZSH/oh-my-zsh.sh
+
+# Syntax highlighting comes from the zsh-syntax-highlighting plugin above
+# (custom/plugins symlink to /usr/share). Styles go after oh-my-zsh loads it:
+# before that ZSH_HIGHLIGHT_STYLES isn't an associative array yet.
+ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets pattern)
+ZSH_HIGHLIGHT_STYLES[default]=none
+ZSH_HIGHLIGHT_STYLES[unknown-token]=underline
+ZSH_HIGHLIGHT_STYLES[reserved-word]=fg=cyan,bold
+ZSH_HIGHLIGHT_STYLES[suffix-alias]=fg=green,underline
+ZSH_HIGHLIGHT_STYLES[global-alias]=fg=green,bold
+ZSH_HIGHLIGHT_STYLES[precommand]=fg=green,underline
+ZSH_HIGHLIGHT_STYLES[commandseparator]=fg=blue,bold
+ZSH_HIGHLIGHT_STYLES[autodirectory]=fg=green,underline
+ZSH_HIGHLIGHT_STYLES[path]=bold
+ZSH_HIGHLIGHT_STYLES[path_pathseparator]=
+ZSH_HIGHLIGHT_STYLES[path_prefix_pathseparator]=
+ZSH_HIGHLIGHT_STYLES[globbing]=fg=blue,bold
+ZSH_HIGHLIGHT_STYLES[history-expansion]=fg=blue,bold
+ZSH_HIGHLIGHT_STYLES[command-substitution]=none
+ZSH_HIGHLIGHT_STYLES[command-substitution-delimiter]=fg=magenta,bold
+ZSH_HIGHLIGHT_STYLES[process-substitution]=none
+ZSH_HIGHLIGHT_STYLES[process-substitution-delimiter]=fg=magenta,bold
+ZSH_HIGHLIGHT_STYLES[single-hyphen-option]=fg=green
+ZSH_HIGHLIGHT_STYLES[double-hyphen-option]=fg=green
+ZSH_HIGHLIGHT_STYLES[back-quoted-argument]=none
+ZSH_HIGHLIGHT_STYLES[back-quoted-argument-delimiter]=fg=blue,bold
+ZSH_HIGHLIGHT_STYLES[single-quoted-argument]=fg=yellow
+ZSH_HIGHLIGHT_STYLES[double-quoted-argument]=fg=yellow
+ZSH_HIGHLIGHT_STYLES[dollar-quoted-argument]=fg=yellow
+ZSH_HIGHLIGHT_STYLES[rc-quote]=fg=magenta
+ZSH_HIGHLIGHT_STYLES[dollar-double-quoted-argument]=fg=magenta,bold
+ZSH_HIGHLIGHT_STYLES[back-double-quoted-argument]=fg=magenta,bold
+ZSH_HIGHLIGHT_STYLES[back-dollar-quoted-argument]=fg=magenta,bold
+ZSH_HIGHLIGHT_STYLES[assign]=none
+ZSH_HIGHLIGHT_STYLES[redirection]=fg=blue,bold
+ZSH_HIGHLIGHT_STYLES[comment]=fg=black,bold
+ZSH_HIGHLIGHT_STYLES[named-fd]=none
+ZSH_HIGHLIGHT_STYLES[numeric-fd]=none
+ZSH_HIGHLIGHT_STYLES[arg0]=fg=cyan
+ZSH_HIGHLIGHT_STYLES[bracket-error]=fg=red,bold
+ZSH_HIGHLIGHT_STYLES[bracket-level-1]=fg=blue,bold
+ZSH_HIGHLIGHT_STYLES[bracket-level-2]=fg=green,bold
+ZSH_HIGHLIGHT_STYLES[bracket-level-3]=fg=magenta,bold
+ZSH_HIGHLIGHT_STYLES[bracket-level-4]=fg=yellow,bold
+ZSH_HIGHLIGHT_STYLES[bracket-level-5]=fg=cyan,bold
+ZSH_HIGHLIGHT_STYLES[cursor-matchingbracket]=standout
 
 # User configuration
 
@@ -152,8 +152,8 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 # some more ls aliases
-alias ls='ls -la --color=auto'
-alias ll='ls -l'
+alias ls='ls --color=auto'
+alias ll='ls -la'   # was the default for plain ls
 alias la='ls -A'
 alias l='ls -CF'
 
@@ -161,27 +161,26 @@ alias l='ls -CF'
 
 
 # Ctrl+F — fuzzy find folders from home, cd into selected (silent)
+# Folders that are big, generated or tool-internal: never worth cd-ing into
+_cdf_skip=(.git node_modules .cache .npm .nvm .vscode .vscode-shared __pycache__
+  dist build .next .nuxt .gradle .m2 .android Android .cargo .rustup .oh-my-zsh
+  .fzf .local/share .mozilla .var .dotnet .codex .claude .pi .t3 .zotero go
+  .config/BraveSoftware .config/Code .config/discord .config/t3code-v2)
+
 cdf() {
   local dir
-  dir=$(find ~ -type d \( \
-    -name '.git'            -o \
-    -name 'node_modules'    -o \
-    -name '.cache'          -o \
-    -name '.npm'            -o \
-    -name '.nvm'            -o \
-    -name '.vscode'         -o \
-    -name '__pycache__'     -o \
-    -name '.DS_Store'       -o \
-    -name 'dist'            -o \
-    -name 'build'           -o \
-    -name '.next'           -o \
-    -name '.nuxt'           \
-  \) -prune -o -type d -print 2>/dev/null \
-    | fzf --prompt="  cd> " \
-          --height=40% \
-          --layout=reverse \
-          --border=rounded \
-          --no-preview)
+  if command -v fd >/dev/null; then
+    # fd: parallel and much faster than find over all of $HOME
+    dir=$(fd . ~ --type d --hidden --no-ignore --color=never \
+            ${_cdf_skip[@]/#/--exclude=} 2>/dev/null \
+      | fzf --prompt="  cd> " --height=40% --layout=reverse --border=rounded --no-preview)
+  else
+    local -a prune=()
+    local d
+    for d in $_cdf_skip; do prune+=(-path "$HOME/$d" -o -name "$d" -o); done
+    dir=$(find ~ -type d \( "${prune[@]:0:-1}" \) -prune -o -type d -print 2>/dev/null \
+      | fzf --prompt="  cd> " --height=40% --layout=reverse --border=rounded --no-preview)
+  fi
   if [[ -n "$dir" ]]; then
     cd "$dir"
     zle reset-prompt
@@ -195,20 +194,15 @@ if [ "$XDG_SESSION_TYPE" = "x11" ]; then
     setxkbmap -option ctrl:nocaps,ctrl:ralt_rctrl
 fi
 
-# Auto-attach or create tmux session
-if command -v tmux &> /dev/null && [ -z "$TMUX" ]; then
-  tmux attach -t main 2>/dev/null || tmux new-session -s main
-fi
-
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
 # Added by Feynman installer
-export PATH="/home/mclovin/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 # opencode
-export PATH=/home/mclovin/.opencode/bin:$PATH
+export PATH=$HOME/.opencode/bin:$PATH
 
 # Android SDK
 export ANDROID_HOME=$HOME/Android/sdk
@@ -216,3 +210,9 @@ export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-
 
 # Added by camber installer
 export PATH="$HOME/.camber/bin:$PATH"
+
+# Last, so the tmux server starts with the full PATH / nvm env above
+# Auto-attach or create tmux session
+if command -v tmux &> /dev/null && [ -z "$TMUX" ]; then
+  tmux attach -t main 2>/dev/null || tmux new-session -s main
+fi

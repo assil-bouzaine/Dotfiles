@@ -15,7 +15,7 @@ REPO=https://github.com/assil-bouzaine/Dotfiles.git
 PACKAGES=(hypr waybar swaync kitty tmux vim zsh)
 
 PACMAN_PKGS=(
-    git base-devel stow zsh tmux vim curl fzf lua
+    git base-devel stow zsh tmux vim curl fzf fd lua
     hyprland hypridle hyprlock awww
     xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
     kitty dolphin gwenview archlinux-xdg-menu plasma-integration polkit-kde-agent rofi gnome-keyring
@@ -145,7 +145,7 @@ finish() {
     info "- Monitors: check 'hyprctl monitors', fix conf.d/monitors.lua."
     info "- Hex: open it once (hex app) and download a model; keys are in hyprland.md."
     if [[ $HOME != /home/mclovin ]]; then
-        warn "hyprlock.conf and .zshrc hard-code /home/mclovin; fix those paths for $HOME."
+        warn "hyprlock.conf hard-codes /home/mclovin; fix that path for $HOME."
     fi
     info "- Verify: hyprctl configerrors   (must be empty)"
 }
