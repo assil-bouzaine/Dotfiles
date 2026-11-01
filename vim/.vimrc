@@ -123,23 +123,6 @@ let g:fzf_layout = { 'window': { 'width': 0.95, 'height': 0.8 } }
 " Show preview window on right (toggle with Ctrl-/)
 let g:fzf_preview_window = ['right:50%', 'ctrl-/']
 
-" FZF Colors — lighter dark background
-let g:fzf_colors = {
-  \ 'fg':      ['fg', 'Normal'],
-  \ 'bg':      ['bg', 'Normal'],
-  \ 'hl':      ['fg', 'Comment'],
-  \ 'fg+':     ['fg', 'CursorLine', 'CursorColumn', 'Normal'],
-  \ 'bg+':     ['bg', 'CursorLine', 'CursorColumn'],
-  \ 'hl+':     ['fg', 'Statement'],
-  \ 'info':    ['fg', 'PreProc'],
-  \ 'border':  ['fg', 'Ignore'],
-  \ 'prompt':  ['fg', 'Conditional'],
-  \ 'pointer': ['fg', 'Exception'],
-  \ 'marker':  ['fg', 'Keyword'],
-  \ 'spinner': ['fg', 'Label'],
-  \ 'header':  ['fg', 'Comment']
-  \ }
-
 " Custom FZF highlight groups (lighter background)
 augroup FZFColors
   autocmd!
@@ -173,8 +156,8 @@ nnoremap <Leader>g :Rg<CR>
 " Space + b = buffers
 nnoremap <Leader>b :Buffers<CR>
 
-" Space + h = recent files
-nnoremap <Leader>fh :History<CR>
+" Space + e = recent files (not <Leader>fh: it made <Leader>f wait for a 2nd key)
+nnoremap <Leader>e :History<CR>
 
 " Space + r = browse registers
 nnoremap <Leader>r :Registers<CR>
@@ -182,6 +165,10 @@ nnoremap <Leader>r :Registers<CR>
 " ============================================
 " FZF REGISTERS
 " ============================================
+
+" Previews go in Vim's own temp dir (mode 700, removed when Vim exits), not
+" /tmp: registers can hold passwords and tokens.
+let s:regdir = fnamemodify(tempname(), ':h')
 
 function! s:registers_list()
   let l:regs = '0123456789abcdefghijklmnopqrstuvwxyz"+-*/'
@@ -191,7 +178,7 @@ function! s:registers_list()
     let l:content = getreg(l:r)
     if l:content !=# ''
       " Write register content to a temp file for preview
-      let l:tmpfile = '/tmp/vim_reg_' . char2nr(l:r)
+      let l:tmpfile = s:regdir . '/reg_' . char2nr(l:r)
       call writefile(split(l:content, '\n'), l:tmpfile)
       " Tag line with the char code so preview can find it
       let l:preview = substitute(l:content, '\n', '\\n', 'g')
@@ -214,7 +201,7 @@ endfunction
 command! Registers call fzf#run(fzf#wrap({
   \ 'source': s:registers_list(),
   \ 'sink': function('s:registers_sink'),
-  \ 'options': '--prompt="Registers> " --preview="cat /tmp/vim_reg_{1}" --preview-window=right:50%:wrap'
+  \ 'options': '--prompt="Registers> " --preview="cat ' . s:regdir . '/reg_{1}" --preview-window=right:50%:wrap'
   \ }))
 
 
@@ -233,7 +220,7 @@ function! HarpoonAdd()
     return
   endif
   if len(g:harpoon_marks) >= 9
-    echo "Harpoon full (max 9). Remove one first with <leader>r"
+    echo "Harpoon full (max 9). Remove one first with <leader>d"
     return
   endif
   call add(g:harpoon_marks, l:file)
@@ -340,7 +327,8 @@ autocmd VimLeave * call HarpoonSave()
 " ── Keymaps ─────────────────────────────────────────────────────────────────
 nnoremap <leader>a  :call HarpoonAdd()<CR>
 nnoremap <leader>d  :call HarpoonRemove()<CR>
-nnoremap <leader>dd :call HarpoonRemoveAll()<CR>
+" <leader>D, not <leader>dd: that made <leader>d wait for a second key
+nnoremap <leader>D  :call HarpoonRemoveAll()<CR>
 nnoremap <leader>1  :call HarpoonJump(1)<CR>
 nnoremap <leader>2  :call HarpoonJump(2)<CR>
 nnoremap <leader>3  :call HarpoonJump(3)<CR>
