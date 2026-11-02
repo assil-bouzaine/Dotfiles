@@ -5,6 +5,10 @@
 # (SessionEnd), so an exited agent no longer shows in the status bar.
 [ -n "$TMUX_PANE" ] || exit 0
 if [ "$2" = clear ]; then
+    # Codex runs its hooks in a background app-server whose TMUX_PANE is wherever that
+    # server started, maybe another live codex: never clear a pane codex still runs in.
+    [ "$1" = codex ] &&
+        [ "$(tmux display -p -t "$TMUX_PANE" '#{pane_current_command}' 2>/dev/null)" = codex ] && exit 0
     tmux set -pu -t "$TMUX_PANE" @agent_name \; set -pu -t "$TMUX_PANE" @agent_state 2>/dev/null
 else
     tmux set -p -t "$TMUX_PANE" @agent_name "$1" \; set -p -t "$TMUX_PANE" @agent_state "$2" 2>/dev/null
