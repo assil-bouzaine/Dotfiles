@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""tg-notify: your Telegram alert bots (one per agent) from the command line.
+
+  tg-notify [--bot claude|codex] "text"   send a message, or pipe it in (default bot: claude)
+                                          --md formats Markdown, --html sends Telegram HTML,
+                                          --silent arrives without a sound
+  tg-notify --bot X setup [token]         connect a bot: saves the token, finds your chat,
+                                          starts its reply bridge (tg-bridge@X), sends a test
+  tg-notify off | on                      mute / unmute all alerts (desktop toasts stay)
+  tg-notify --bot X off | on              mute / unmute one bot
+  tg-notify status                        bots, bridges, mute state, last alert
+  tg-notify [--bot X] test                test message (both bots when --bot is left out)
+  tg-notify log [N]                       last N alerts (sent / not sent / FAILED) and what
+                                          you did from the phone (default 20)
+
+Tokens live in ~/.config/tg-notify/<bot>.env (chmod 600, never in git).
+"""
+import getpass
+import os
+import shlex
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib/agent-notify"))
+from agentnotify import markdown, telegram  # noqa: E402
+from agentnotify.telegram import BOTS, CONF  # noqa: E402
+
+
+def systemctl(*args):
+    return subprocess.run(["systemctl", "--user", *args], capture_output=True, text=True)
+
+
+def setup(bot, token):
+    if not token:
+        if not sys.stdin.isatty():
+            sys.exit(f"No terminal to type the token in. Run this in a normal terminal, or:\n"
+                     f"  tg-notify --bot {bot} setup <token>")
+        token = getpass.getpass("Bot token from @BotFather: ").strip()
+        if not token:
+            sys.exit("no token")
+        print(f"Now open the {bot} bot in Telegram and send it any message (e.g. /start).")
+        input("Press Enter once you've sent it... ")
+    systemctl("stop", f"tg-bridge@{bot}")         # it would swallow that /start
+    try:
+        updates = telegram.Bot(bot, (token, 0)).api("getUpdates", retries=2)
+    except telegram.TelegramError as e:
+        sys.exit(f"Telegram didn't accept that token: {e}")
+    chats = [(u.get("message") or u.get("edited_message") or {}).get("chat", {}).get("id")
+             for u in updates]
+    chat = next((c for c in reversed(chats) if c), None)
+    if not chat:
+        sys.exit(f"No message found. Send the {bot} bot a message (e.g. /start), then rerun setup.")
+    CONF.mkdir(mode=0o700, parents=True, exist_ok=True)
+    env = CONF / f"{bot}.env"
+    fd = os.open(env, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(f"TG_TOKEN={shlex.quote(token)}\nTG_CHAT={chat}\n")
+    print(f"Saved (chat id {chat}) to {env}")
+    if systemctl("enable", "--now", f"tg-bridge@{bot}").returncode == 0:
+        print(f"Reply bridge tg-bridge@{bot} running")
+    return test([bot])
+
+
+def test(bots):
+    ok = True
+    for bot in bots:
+        try:
+            telegram.Bot(bot).send(f"tg-notify works on {socket.gethostname()} ({bot} bot)")
+            print(f"{bot}: sent")
+        except telegram.TelegramError as e:
+            print(f"{bot}: {e}")
+            ok = False
+    return 0 if ok else 1
+
+
+def status():
+    for bot in BOTS:
+        conf = telegram.config(bot)
+        if not conf:
+            print(f"{bot:<7} not set up   (tg-notify --bot {bot} setup)")
+            continue
+        bridge = systemctl("is-active", f"tg-bridge@{bot}").stdout.strip() or "unknown"
+        state = "muted" if telegram.muted(bot) else "on"
+        last = "none yet"
+        alerts = [l for l in telegram.log_lines(100, bot) if l.split()[3:4] != ["phone"]]
+        if alerts:
+            day, clock, _, kind, outcome = (alerts[-1].split(None, 4) + [""] * 5)[:5]
+            last = f"{day} {clock[:5]} {kind}, {outcome}"
+        print(f"{bot:<7} {state:<6} chat {conf[1]}   bridge {bridge:<8}  last alert: {last}")
+    print("all alerts muted (tg-notify on)" if (CONF / "muted").exists()
+          else "tg-notify off mutes everything, --bot X off one bot")
+    return 0
+
+
+def main(argv):
+    bot, mode, silent, words = None, None, False, []
+    while argv:
+        a = argv.pop(0)
+        if a == "--bot" and argv:
+            bot = argv.pop(0)
+        elif a in ("--html", "--md"):
+            mode = a[2:]
+        elif a == "--silent":
+            silent = True
+        elif a in ("-h", "--help"):
+            print(__doc__.strip())
+            return 0
+        else:
+            words.append(a)
+    if bot and bot not in BOTS:
+        sys.exit(f"unknown bot {bot!r}: use {' or '.join(BOTS)}")
+    cmd = words[0] if words else ""
+    if cmd == "setup":
+        if not bot:
+            sys.exit("Which bot? tg-notify --bot claude setup <token>  (or --bot codex)")
+        return setup(bot, words[1] if len(words) > 1 else "")
+    if cmd in ("on", "off"):
+        flag = CONF / (f"muted.{bot}" if bot else "muted")
+        if cmd == "off":
+            CONF.mkdir(mode=0o700, parents=True, exist_ok=True)
+            flag.touch()
+        else:
+            flag.unlink(missing_ok=True)
+        print(f"{bot or 'all'} alerts {'muted' if cmd == 'off' else 'on'}")
+        return 0
+    if cmd == "status":
+        return status()
+    if cmd == "test":
+        return test([bot] if bot else [b for b in BOTS if telegram.config(b)])
+    if cmd == "log":
+        print("\n".join(telegram.log_lines(int(words[1]) if len(words) > 1 else 20, bot))
+              or "nothing logged yet")
+        return 0
+
+    # send
+    bot = bot or "claude"
+    text = " ".join(words) if words else ("" if sys.stdin.isatty() else sys.stdin.read())
+    if not text.strip():
+        print(__doc__.strip())
+        return 2
+    if not telegram.config(bot) or telegram.muted(bot):
+        return 0                          # scripts shouldn't fail because alerts are off
+    if mode == "md":
+        text, mode = markdown.convert(text), "html"
+    try:
+        telegram.Bot(bot).send(text, html_mode=mode == "html", silent=silent)
+    except telegram.TelegramError as e:
+        print(f"tg-notify: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,439 @@
+#!/usr/bin/env python3
+"""agent-notify: one hook for Claude Code and Codex -> tmux state, desktop toast, Telegram.
+
+  agent-notify claude < hook.json      Claude Code hooks: Stop, Notification, PermissionRequest
+  codex-notify < hook.json             Codex hooks (same script, under the name hooks.json runs)
+  agent-notify --dry-run claude|codex < hook.json    print the Telegram alert, send nothing
+
+Telegram (one bot per agent, see tg-notify) gets:
+  finished   the final reply, formatted for a phone
+  approval   exactly what it wants to run / edit / fetch, with the dialog's choices as buttons
+  question   the question, with its options as buttons
+each with a context / 5h / weekly usage footer.
+Not sent: Claude's "waiting for your input" reminder, which repeats "finished" a minute later.
+Codex approvals wait 6 s (Claude waits by itself) and are dropped if answered by then.
+A hook must never fail: problems go to ~/.local/state/tg-notify/log (tg-notify log).
+"""
+import html
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib/agent-notify"))
+from agentnotify import markdown, telegram, tmux, usage  # noqa: E402
+
+esc = markdown.esc
+DRY = False                                             # --dry-run: print, touch nothing
+AGENT_STATE = Path.home() / ".local/bin/agent-state"    # tmux tags (tmux package)
+PENDING = telegram.STATE / "pending"                    # Claude's latest permission requests
+CODEX_WAIT = 6
+QUESTION_TOOL = re.compile(r"(^|[.:])request_user_input(_async)?$")
+DESKTOP = {   # same toasts as before; Claude also plays a sound
+    "claude": dict(app="Claude Code", icon="utilities-terminal", ms=5000, sound=True),
+    "codex": dict(app="Codex", icon="dialog-information", ms=-1, sound=False),
+}
+VERB = {"done": "finished", "approval": "needs approval", "question": "has a question",
+        "waiting": "needs you", "note": ""}
+# Claude notification types -> alert kind. Unlisted types go out as a plain note.
+CLAUDE_KIND = {"permission_prompt": "approval", "worker_permission_prompt": "approval",
+               "elicitation_dialog": "question", "elicitation_url_dialog": "question",
+               "agent_needs_input": "question", "idle_prompt": "waiting"}
+CLAUDE_DESKTOP_ONLY = {"idle_prompt", "auth_success", "computer_use_enter", "computer_use_exit",
+                       "elicitation_complete", "elicitation_response"}
+
+
+@dataclass
+class Alert:
+    agent: str
+    kind: str                 # done | approval | question | waiting | note
+    project: str
+    body: str                 # Telegram HTML
+    payload: dict
+    panes: list = field(default_factory=list)
+    anchor: str = ""          # text the dialog shows (e.g. the command): guards the buttons
+    wait: int = 0             # seconds to hold back, dropped if answered meanwhile
+    verb: str = ""            # header wording if not the kind's usual one
+
+
+# ---- Claude ----------------------------------------------------------------
+
+def claude(p):
+    event = p.get("hook_event_name")
+    if event == "PermissionRequest":      # remember the details; the alert itself comes
+        save_pending("claude", p)         # from the Notification Claude sends after ~6 s
+        return None
+    panes = [os.environ["TMUX_PANE"]] if os.environ.get("TMUX_PANE") else []
+    project = project_of(p, "claude")
+    if event == "Stop":
+        last = p.get("last_assistant_message") or ""
+        set_state("claude", "done", panes)
+        desktop("claude", f"Claude finished · {project}",
+                markdown.preview(last) or "Task complete", "complete")
+        return Alert("claude", "done", project, markdown.convert(last), p, panes)
+    if event != "Notification":
+        return None
+    ntype = p.get("notification_type") or ""
+    msg = p.get("message") or "Waiting for your input"
+    kind = CLAUDE_KIND.get(ntype, "note")
+    if kind != "note":
+        set_state("claude", "waiting", panes)
+    desktop("claude", f"Claude needs you · {project}", msg, "dialog-warning")
+    if ntype in CLAUDE_DESKTOP_ONLY:
+        note("claude", kind, f"not sent: {ntype} (desktop only)")
+        return None
+    body, anchor, verb = esc(msg), "", ""
+    if kind == "approval" and (req := pending("claude", p, msg)):
+        kind, body, anchor = describe(req.get("tool_name") or "", req.get("tool_input"))
+        verb = many(req.get("tool_input"))
+    return Alert("claude", kind, project, body, p, panes, anchor, verb=verb)
+
+
+def save_pending(agent, p):
+    """Keep the last few permission requests of a session (tool + input, long strings cut)."""
+    def cut(v):
+        if isinstance(v, str):
+            return v[:4000]
+        if isinstance(v, dict):
+            return {k: cut(x) for k, x in v.items()}
+        return [cut(x) for x in v[:50]] if isinstance(v, list) else v
+    path = telegram.state_dir("pending") / f"{agent}-{safe(p.get('session_id'))}.json"
+    recs = usage.load(path) if path.exists() else []
+    recs = (recs if isinstance(recs, list) else [])[-4:]
+    recs.append({"tool_name": p.get("tool_name") or "", "tool_input": cut(p.get("tool_input")),
+                 "t": time.time()})
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_text(json.dumps(recs))
+    tmp.replace(path)
+    for old in PENDING.glob("*.json"):           # sessions from yesterday and before
+        if time.time() - old.stat().st_mtime > 86400:
+            old.unlink(missing_ok=True)
+
+
+def pending(agent, p, msg):
+    """The permission request a 'Claude needs your permission to use X' message is about."""
+    recs = usage.load(PENDING / f"{agent}-{safe(p.get('session_id'))}.json")
+    recs = [r for r in recs if isinstance(r, dict) and time.time() - r.get("t", 0) < 900] \
+        if isinstance(recs, list) else []
+    tool = msg.rsplit(" to use ", 1)[1].strip() if " to use " in msg else ""
+    return next((r for r in reversed(recs) if r.get("tool_name") == tool), None) \
+        or (recs[-1] if recs else None)
+
+
+# ---- Codex -----------------------------------------------------------------
+
+def codex(p):
+    event, tool = p.get("hook_event_name"), p.get("tool_name") or ""
+    panes = codex_panes(p.get("cwd"))
+    project = project_of(p, "codex")
+    if event in ("UserPromptSubmit", "PostToolUse"):
+        set_state("codex", "working", panes)
+        return None
+    if event == "Stop":
+        set_state("codex", "done", panes)
+        desktop("codex", "Codex finished a turn", f"{project}: The response is ready to review.")
+        last = p.get("last_assistant_message")
+        body = markdown.convert(last) if isinstance(last, str) and last.strip() \
+            else "The response is ready to review."
+        return Alert("codex", "done", project, body, p, panes)
+    if event == "PermissionRequest":
+        set_state("codex", "waiting", panes)
+        desktop("codex", "Codex needs approval",
+                f"{project}: Return to Codex to review an approval request.")
+        kind, body, anchor = describe(tool, p.get("tool_input"))
+        return Alert("codex", kind, project, body, p, panes, anchor, wait=CODEX_WAIT)
+    if event == "PreToolUse" and QUESTION_TOOL.search(tool):
+        set_state("codex", "waiting", panes)
+        desktop("codex", "Codex needs your input", f"{project}: Codex has a question for you.")
+        body, anchor = questions(p.get("tool_input"))
+        return Alert("codex", "question", project, body or "Codex has a question for you.",
+                     p, panes, anchor, verb=many(p.get("tool_input")))
+    return None
+
+
+def many(inp):
+    """'has 3 questions' for a form with several questions, else '' (the usual header)."""
+    qs = inp.get("questions") if isinstance(inp, dict) else None
+    return f"has {len(qs)} questions" if isinstance(qs, list) and len(qs) > 1 else ""
+
+
+def codex_panes(cwd):
+    """Codex runs hooks in its background app-server, whose TMUX_PANE is wherever that server
+    first started, so find the TUI's pane by its working directory instead."""
+    live = [x for x in tmux.panes() if x["agent"] == "codex"]
+    own = os.environ.get("TMUX_PANE")
+    if any(x["id"] == own for x in live):
+        return [own]
+    return [x["id"] for x in live if cwd and x["path"] == cwd]
+
+
+# ---- what an approval or question is about ---------------------------------
+
+def describe(tool, inp):
+    """(kind, HTML, anchor) for a tool call waiting for approval. The anchor is text the
+    dialog itself shows, checked before a Telegram button presses anything."""
+    try:
+        return _describe(tool, inp)
+    except Exception:        # odd input shape: a plain alert beats a lost one
+        return "approval", f"<b>{esc(tool or 'A tool')}</b> wants to run", ""
+
+
+def _describe(tool, inp):
+    inp = inp if isinstance(inp, dict) else {"input": inp}
+    if tool == "AskUserQuestion":
+        return ("question", *questions(inp))
+    if tool == "ExitPlanMode":
+        return "approval", "<b>Plan ready for review</b>\n\n" + markdown.convert(
+            str(inp.get("plan") or ""), 2500), ""
+    if tool == "Bash":
+        cmd = inp.get("command") or ""
+        if isinstance(cmd, list):    # ["bash", "-lc", "npm test"] -> npm test
+            cmd = cmd[2] if len(cmd) == 3 and cmd[1] in ("-c", "-lc") else shlex.join(map(str, cmd))
+        why = inp.get("description") or inp.get("justification") or ""
+        return "approval", title("Run a command", why) + "\n" + \
+            markdown.code_block(str(cmd).splitlines(), "sh"), str(cmd)
+    if tool == "apply_patch":                    # Codex file edits: the patch is the command
+        return ("approval", *patch(str(inp.get("command") or inp.get("input") or "")))
+    path = str(inp.get("file_path") or inp.get("notebook_path") or "")
+    if tool in ("Edit", "MultiEdit"):
+        edits = inp.get("edits") if tool == "MultiEdit" else [inp]
+        diff = []
+        for e in (edits or [])[:3]:
+            diff += [f"- {l}" for l in str(e.get("old_string", "")).splitlines()]
+            diff += [f"+ {l}" for l in str(e.get("new_string", "")).splitlines()]
+        return "approval", title("Edit file", code(path), raw=True) \
+            + "\n" + markdown.code_block(diff, "diff", 20), Path(path).name
+    if tool == "Write":
+        return "approval", title("Write file", code(path), raw=True) \
+            + "\n" + markdown.code_block(str(inp.get("content", "")).splitlines(), "", 15), Path(path).name
+    if tool == "NotebookEdit":
+        return "approval", title("Edit notebook", code(path), raw=True) \
+            + "\n" + markdown.code_block(str(inp.get("new_source", "")).splitlines(), "", 15), Path(path).name
+    if tool == "WebFetch":
+        url = str(inp.get("url") or "")
+        host = re.sub(r"^\w+://", "", url).split("/")[0]
+        return "approval", title("Fetch a page", url) + (
+            f"\n<i>{esc(str(inp.get('prompt') or '')[:300])}</i>" if inp.get("prompt") else ""), host
+    if tool == "WebSearch":
+        return "approval", title("Search the web", str(inp.get("query") or "")), ""
+    if tool in ("Read", "Glob", "Grep"):
+        return "approval", title(tool, code(path or str(inp.get("pattern") or "")), raw=True), ""
+    label = " · ".join(tool.split("__")[1:]) if tool.startswith("mcp__") else tool
+    args = json.dumps(inp, indent=1, ensure_ascii=False)
+    return "approval", f"<b>{esc(label or 'Tool')}</b>\n" + \
+        markdown.code_block(args[:1500].splitlines(), "json", 15), ""
+
+
+def title(action, detail="", raw=False):
+    detail = detail if raw else esc(markdown.tilde(detail))
+    return f"<b>{action}</b>" + (f" · {detail}" if detail else "")
+
+
+def code(path):
+    """A path as inline code, ~ for home; nothing if there's no path."""
+    return f"<code>{esc(markdown.tilde(path))}</code>" if path else ""
+
+
+def patch(text):
+    """Codex apply_patch: which files it touches plus the start of the diff."""
+    files = re.findall(r"^\*\*\* (Add|Update|Delete) File: (.+)$", text, re.M)
+    head = "\n".join(f"{verb.lower()} <code>{esc(markdown.tilde(f))}</code>" for verb, f in files[:8])
+    diff = [l for l in text.splitlines() if l[:1] in "+-" and not l.startswith(("+++", "---"))]
+    body = "<b>Edit files</b>" + (f"\n{head}" if head else "")
+    if diff:
+        body += "\n" + markdown.code_block(diff, "diff", 20)
+    return body, Path(files[0][1]).name if files else ""
+
+
+def questions(inp):
+    """(HTML, anchor) for questions with options: Claude's AskUserQuestion, Codex's
+    request_user_input ({"questions": [{"question"|"title", "header", "options"}]})."""
+    try:
+        return _questions(inp)
+    except Exception:
+        return "", ""
+
+
+def _questions(inp):
+    qs = inp.get("questions") if isinstance(inp, dict) else None
+    if not isinstance(qs, list):
+        text = str((inp or {}).get("question") or (inp or {}).get("prompt") or "") \
+            if isinstance(inp, dict) else ""
+        return markdown.inline(text), text
+    blocks, anchor = [], ""
+    for q in qs[:4]:
+        if not isinstance(q, dict):
+            continue
+        text = str(q.get("question") or q.get("title") or q.get("header") or "")
+        anchor = anchor or text
+        lines = [f"<b>{esc(q['header'])}</b>"] if q.get("header") and q.get("header") != text else []
+        lines.append(markdown.inline(text))
+        for n, o in enumerate(q.get("options") or [], 1):
+            label = str(o.get("label") or "") if isinstance(o, dict) else str(o)
+            note = str(o.get("description") or "") if isinstance(o, dict) else ""
+            lines.append(f"{n}. {markdown.inline(label)}" + (f"  <i>{esc(note)}</i>" if note else ""))
+        blocks.append("\n".join(lines))
+    if len(blocks) > 1:
+        blocks.append("<i>The buttons answer the first question. Each next one follows "
+                      "as you tap, then Submit.</i>")
+    return "\n\n".join(blocks), anchor
+
+
+# ---- local side: tmux tag + desktop toast ------------------------------------
+
+def note(agent, kind, outcome):
+    if DRY:
+        print(f"[log] {agent} {kind}: {outcome}", file=sys.stderr)
+    else:
+        telegram.log(agent, kind, outcome)
+
+
+def set_state(agent, state, panes):
+    """working / waiting / done tag on the pane (tmux status bar, prefix Space)."""
+    if DRY:
+        return print(f"[tmux] {agent} {state} on {panes or 'no pane'}", file=sys.stderr)
+    for pane in panes:
+        env = dict(os.environ, TMUX_PANE=pane,
+                   TMUX=os.environ.get("TMUX") or f"/tmp/tmux-{os.getuid()}/default")
+        try:
+            subprocess.run([str(AGENT_STATE), agent, state], env=env, timeout=3,
+                           capture_output=True)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
+def desktop(agent, title_, body, sound=None):
+    d = DESKTOP[agent]
+    if DRY:
+        return print(f"[desktop] {title_} | {body}" + (f" | sound {sound}" if sound and d["sound"]
+                                                         else ""), file=sys.stderr)
+    env = os.environ.copy()
+    bus = Path(f"/run/user/{os.getuid()}/bus")     # a background app-server may lack it
+    if not env.get("DBUS_SESSION_BUS_ADDRESS") and bus.exists():
+        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
+    cmds = [["notify-send", f"--app-name={d['app']}", f"--icon={d['icon']}", "--urgency=normal",
+             f"--expire-time={d['ms']}", "--", title_, html.escape(body)]]
+    oga = Path(f"/usr/share/sounds/freedesktop/stereo/{sound}.oga")
+    if sound and d["sound"] and oga.exists():
+        cmds.append(["paplay", str(oga)])
+    for cmd in cmds:
+        try:
+            subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError:
+            pass
+
+
+# ---- Telegram ----------------------------------------------------------------
+
+def compose(a):
+    """(HTML text, buttons, route info) for an alert."""
+    verb = a.verb or VERB.get(a.kind, a.kind)
+    text = f"<b>{a.agent.capitalize()}{' ' + verb if verb else ''}</b>"
+    if a.project:
+        text += f"\n<i>{esc(a.project)}</i>"
+    if a.body:
+        text += "\n\n" + a.body
+    if foot := usage.footer(a.agent, a.payload):
+        text += "\n\n" + foot
+    pane = a.panes[0] if a.panes else ""
+    opts, buttons = [], None
+    if pane and a.kind in ("approval", "question"):
+        screen = tmux.screen(pane)
+        opts = tmux.choices(screen)
+        if opts and not tmux.shows(screen, a.anchor):
+            opts = []                        # the dialog on screen is some other one
+        buttons = [[{"text": o, "callback_data": f"opt:{o.split('.')[0]}"}] for o in opts[:9]]
+        buttons.append([{"text": "Show screen", "callback_data": "screen"}])
+    route = dict(pane=pane, agent=a.agent, server=tmux.server(), kind=a.kind,
+                 opts=opts, anchor=a.anchor[:120]) if pane else None
+    return text, buttons, route
+
+
+def still_waiting(a):
+    """After the hold: is a Codex approval still unanswered? Its tag is still 'waiting'
+    (an answer runs the tool and flips it), or a dialog is still on screen."""
+    live = {x["id"]: x for x in tmux.panes()}
+    return any(pane in live and (live[pane]["state"] == "waiting" or tmux.choices(tmux.screen(pane)))
+               for pane in a.panes)
+
+
+def deliver(a):
+    if not telegram.config(a.agent):
+        return note(a.agent, a.kind, "not sent: bot not set up")
+    if telegram.muted(a.agent):
+        return note(a.agent, a.kind, "not sent: muted")
+    detach()                               # the rest runs in the background
+    if a.wait and a.panes:
+        time.sleep(a.wait)
+        if not still_waiting(a):
+            return note(a.agent, a.kind, f"not sent: answered within {a.wait} s")
+    text, buttons, route = compose(a)
+    try:
+        mid = telegram.Bot(a.agent).send(text, html_mode=True, buttons=buttons)
+    except telegram.TelegramError as e:
+        return telegram.log(a.agent, a.kind, f"FAILED: {e}")
+    if route:
+        telegram.remember(a.agent, mid, **route)
+    telegram.log(a.agent, a.kind, f"sent #{mid}" + (f" with {len(route['opts'])} choices"
+                                                     if route and route["opts"] else ""))
+
+
+def detach():
+    """Fork: the parent exits now (Codex waits for its hooks), the child carries on."""
+    sys.stdout.flush()
+    if os.fork():
+        os._exit(0)
+    os.setsid()
+    null = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        os.dup2(null, fd)
+
+
+# ---- glue --------------------------------------------------------------------
+
+def project_of(p, agent):
+    return Path(p.get("cwd") or "").name or agent
+
+
+def safe(s):
+    return re.sub(r"[^\w.-]", "_", str(s or "none"))[:80]
+
+
+def main():
+    global DRY
+    args = sys.argv[1:]
+    dry = DRY = "--dry-run" in args
+    args = [x for x in args if x != "--dry-run"]
+    agent = args[0] if args else ("codex" if Path(sys.argv[0]).name.startswith("codex") else "")
+    if agent not in telegram.BOTS:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    if agent == "codex" and not dry:
+        print("{}", flush=True)         # Codex expects JSON from a hook (Stop insists on it)
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+        payload = payload if isinstance(payload, dict) else {}
+        alert = (claude if agent == "claude" else codex)(payload)
+        if alert and dry:
+            text, buttons, route = compose(alert)
+            print(text)
+            print("\nbuttons:", json.dumps(buttons), "\nroute:", json.dumps(route),
+                  f"\nwait: {alert.wait}s" if alert.wait else "")
+        elif alert:
+            deliver(alert)
+    except Exception as e:                # notifications must never break the agent
+        if dry:
+            raise
+        note(agent, "error", f"FAILED: {type(e).__name__}: {e}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

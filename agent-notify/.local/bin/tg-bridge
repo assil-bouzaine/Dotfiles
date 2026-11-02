@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""tg-bridge: answer Claude Code / Codex from Telegram.
+
+  tg-bridge claude|codex     poll that bot; run as the systemd user unit tg-bridge@<bot>
+
+Only messages from your own chat count, and only fresh ones (10 min), so nothing old gets
+typed in after the PC was off. Agents must run in tmux.
+
+  reply to an alert          typed into the session that sent it, then Enter
+  plain message              typed into this agent (the session that alerted last)
+  buttons on an alert        press that choice, if the same dialog is still on screen
+  /screen                    the bottom of the agent's screen
+  /key 1 · /key Escape · /key Down Enter      press keys: a letter or digit, Enter,
+                             Escape, Tab, Space, BSpace, Up, Down, Left, Right, Home, End,
+                             PageUp, PageDown, C-c (any C-x / M-x)
+  /list                      open agents and what they're doing
+  /claude text · /codex text type into the other agent from either chat
+"""
+import html
+import json
+import re
+import sys
+import time
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib/agent-notify"))
+from agentnotify import telegram, tmux  # noqa: E402
+
+BOT = sys.argv[1] if len(sys.argv) > 1 else ""
+if BOT not in telegram.BOTS:
+    sys.exit("usage: tg-bridge claude|codex")
+TG = telegram.Bot(BOT)
+MAX_AGE = 600
+SCREEN_CHARS = 3500
+KEY = re.compile(r"^(?:[A-Za-z0-9]|Enter|Escape|Tab|BTab|Space|BSpace|Up|Down|Left|Right"
+                 r"|Home|End|PageUp|PageDown|[CM]-[a-z])$")
+COMMANDS = [("screen", "Show the agent's screen"), ("key", "Press keys, e.g. /key 1 or /key Escape"),
+            ("list", "Open agents"), ("help", "How this works")]
+
+
+def say(text, reply_to=None, html_mode=False, buttons=None, silent=False):
+    try:
+        return TG.send(text, html_mode=html_mode, buttons=buttons, silent=silent, reply_to=reply_to)
+    except telegram.TelegramError as e:
+        print("send failed:", e, flush=True)
+
+
+def ack(text, reply_to):
+    """Quiet confirmation: no sound, you're looking at the chat anyway."""
+    return say(text, reply_to, silent=True)
+
+
+# ---- which pane --------------------------------------------------------------
+
+class Live:
+    """A snapshot of the open agents, to match alerts (routes) against."""
+
+    def __init__(self):
+        self.panes = tmux.panes()
+        self.by_id = {p["id"]: p for p in self.panes}
+        self.server = tmux.server()
+
+    def of(self, route):
+        """The pane an alert came from, if that very session is still running.
+        Same tmux server (pane ids restart with tmux) and same agent in that pane."""
+        if not route or str(route.get("server")) != self.server:
+            return None
+        p = self.by_id.get(route.get("pane"))
+        return p if p and p["agent"] == route.get("agent") else None
+
+
+def pick(name=None, reply_to=None):
+    """(pane, route, error) for a message: a reply goes back to the alert's session."""
+    live, name = Live(), name or BOT
+    if reply_to and (r := telegram.route(BOT, reply_to)):
+        p = live.of(r)
+        return (p, r, None) if p else (
+            None, None, f"That {(r.get('agent') or BOT).capitalize()} session has ended.")
+    cands = [p for p in live.panes if p["agent"] == name]
+    if not cands:
+        return None, None, f"No {name.capitalize()} running in tmux."
+    if len(cands) > 1:
+        for r in telegram.routes(BOT):     # the session that alerted last, if still open
+            if (p := live.of(r)) and p["agent"] == name:
+                return p, newest(p, live), None
+        waiting = [p for p in cands if p["state"] == "waiting"]
+        if len(waiting) != 1:
+            return None, None, "Several are open. Reply to one of their alerts, or see /list:\n" \
+                + listing(cands)
+        cands = waiting
+    return cands[0], newest(cands[0], live), None
+
+
+def newest(p, live):
+    """The latest alert this pane sent (it may hold the dialog that's on screen)."""
+    return next((r for r in telegram.routes(BOT) if live.of(r) is p), None)
+
+
+def listing(items):
+    return "\n".join(f"{p['agent'].upper():<6} {p['state']:<8} {Path(p['path']).name}  ({p['where']})"
+                     for p in items) or "No Claude or Codex running in tmux."
+
+
+# ---- doing things in the pane -------------------------------------------------
+
+def type_into(p, text):
+    tmux.tmux("load-buffer", "-b", "tgbridge", "-", input=text)
+    tmux.tmux("paste-buffer", "-p", "-d", "-b", "tgbridge", "-t", p["id"])
+    time.sleep(0.4)
+    tmux.tmux("send-keys", "-t", p["id"], "Enter")
+    tmux.tmux("set", "-p", "-t", p["id"], "@agent_state", "working")
+
+
+FREE_TEXT = re.compile(r"^\d+\.\s*(type something|other\b|something else|custom)", re.I)
+
+
+def press(p, r, n):
+    """Pick choice n in the dialog alert r was about. Refuses if that dialog is gone
+    (answered at the PC, or a different one is up now)."""
+    opts, anchor = r.get("opts") or [], r.get("anchor") or ""
+    label = next((o for o in opts if o.split(".")[0] == str(n)), str(n))
+    if not tmux.dialog_is(p["id"], opts, anchor):
+        return False, "That prompt is no longer on screen."
+    tmux.tmux("send-keys", "-t", p["id"], str(n))
+    time.sleep(0.8)
+    if FREE_TEXT.match(label):          # opens a text field: the answer comes as a message
+        return True, "Now send your answer as a message."
+    if tmux.dialog_is(p["id"], opts, anchor):     # the number only moved the cursor
+        tmux.tmux("send-keys", "-t", p["id"], "Enter")
+        time.sleep(0.8)
+        if tmux.dialog_is(p["id"], opts, anchor):
+            return False, f"Pressed {n}, but the prompt is still open. Check /screen."
+    return True, f"Answered: {label}"
+
+
+def show_screen(p, reply_to):
+    lines = tmux.screen(p["id"]).splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and len("\n".join(lines)) > SCREEN_CHARS:
+        lines.pop(0)                          # keep the bottom, where the prompt is
+    body = html.escape("\n".join(lines)) or "(blank)"
+    say(f"<b>{p['agent'].capitalize()} screen</b>  <i>{html.escape(Path(p['path']).name)}</i>\n"
+        f"<pre>{body}</pre>", reply_to, html_mode=True, silent=True)
+
+
+def choice_buttons(opts):
+    return [[{"text": o, "callback_data": f"opt:{o.split('.')[0]}"}] for o in opts[:9]] + \
+        [[{"text": "Show screen", "callback_data": "screen"}]]
+
+
+def follow_up(p, r, reply_to):
+    """Forms with several questions show them one at a time: once one is answered, send
+    the next question's choices (then the final Submit) as a new set of buttons."""
+    time.sleep(0.5)
+    opts, prompt = tmux.dialog(tmux.screen(p["id"]))
+    if not opts or tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
+        return
+    sent = say(f"<b>Next:</b> {html.escape(prompt)}" if prompt else "<b>Next:</b>", reply_to,
+               html_mode=True, buttons=choice_buttons(opts), silent=True)
+    if sent:
+        telegram.remember(BOT, sent, pane=p["id"], agent=p["agent"], server=r.get("server"),
+                          kind="question", opts=opts, anchor=prompt)
+
+
+# ---- messages -------------------------------------------------------------------
+
+def on_message(msg):
+    mid = msg["message_id"]
+    text = (msg.get("text") or "").strip()
+    if not text:
+        return say("Only text messages work here.", mid)
+    reply_to = (msg.get("reply_to_message") or {}).get("message_id")
+
+    if not text.startswith("/"):
+        p, r, err = pick(reply_to=reply_to)
+        if err:
+            return say(err, mid)
+        if r and r.get("kind") in ("approval", "question") and \
+                tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
+            # Typing + Enter into a dialog would pick its highlighted choice ("Yes").
+            sent = say(f"{p['agent'].capitalize()} is waiting on a prompt, so I didn't type that. "
+                       "Pick an answer first, then send your text again if you still need to.",
+                       mid, buttons=choice_buttons(r["opts"]))
+            if sent:
+                telegram.remember(BOT, sent, **{k: r.get(k) for k in
+                                                ("pane", "agent", "server", "kind", "opts", "anchor")})
+            telegram.log(BOT, "phone", "message held back: a prompt was on screen")
+            return None
+        type_into(p, text)
+        telegram.log(BOT, "phone", f"message typed into {p['agent']} ({p['where']})")
+        ack(f"Sent to {p['agent'].capitalize()}", mid)
+        if r and r.get("kind") == "typing":       # a typed answer: maybe more questions
+            follow_up(p, r, mid)
+        return None
+
+    cmd, _, rest = text.partition(" ")
+    cmd, rest = cmd.split("@")[0].lower(), rest.strip()
+
+    if cmd in ("/claude", "/codex"):
+        if not rest:
+            return say(f"Usage: {cmd} <text>", mid)
+        p, _, err = pick(cmd[1:])
+        if err:
+            return say(err, mid)
+        type_into(p, rest)
+        return ack(f"Sent to {p['agent'].capitalize()}", mid)
+
+    if cmd == "/screen":
+        p, _, err = pick(rest if rest in tmux.AGENTS else None, reply_to)
+        return say(err, mid) if err else show_screen(p, mid)
+
+    if cmd == "/key":
+        keys = rest.split()
+        name = keys.pop(0) if keys and keys[0] in tmux.AGENTS else None
+        if not keys or len(keys) > 10 or not all(KEY.match(k) for k in keys):
+            return say("Usage: /key [claude|codex] <keys>\nKeys: a letter or digit, Enter, Escape, "
+                       "Tab, Space, BSpace, Up, Down, Left, Right, C-c ...", mid)
+        p, _, err = pick(name, reply_to)
+        if err:
+            return say(err, mid)
+        for k in keys:
+            tmux.tmux("send-keys", "-t", p["id"], k)
+            time.sleep(0.15)
+        telegram.log(BOT, "phone", f"/key {' '.join(keys)} in {p['agent']} ({p['where']})")
+        return ack(f"Pressed {' '.join(keys)} in {p['agent'].capitalize()}", mid)
+
+    if cmd == "/list":
+        return say(listing(tmux.panes()), mid, silent=True)
+
+    return say(__doc__.split("\n\n", 2)[2].strip(), mid, silent=True)   # /start, /help, ...
+
+
+def on_button(q):
+    msg = q.get("message") or {}
+    if (msg.get("chat") or {}).get("id") != TG.chat:
+        return                                   # not your chat: ignore
+    mid, data = msg.get("message_id"), q.get("data") or ""
+
+    def answer(text=""):
+        try:
+            TG.api("answerCallbackQuery", callback_query_id=q["id"], text=text[:190] or None)
+        except telegram.TelegramError:
+            pass                                 # too old to answer: harmless
+
+    def keyboard(rows):
+        try:
+            TG.api("editMessageReplyMarkup", chat_id=TG.chat, message_id=mid,
+                   reply_markup={"inline_keyboard": rows})
+        except telegram.TelegramError:
+            pass
+
+    r = telegram.route(BOT, mid)
+    p = Live().of(r)
+    if data == "noop":
+        return answer("Already answered.")
+    if not p:
+        keyboard([])
+        return answer("That session has ended.")
+    if data == "screen":
+        answer()
+        return show_screen(p, mid)
+    if data.startswith("opt:") and data[4:].isdigit():
+        ok, note = press(p, r, int(data[4:]))
+        if ok and note.startswith("Now send"):   # free-text choice: let the next text through
+            telegram.remember(BOT, mid, **dict(
+                {k: r.get(k) for k in ("pane", "agent", "server", "opts", "anchor")}, kind="typing"))
+        keyboard([[{"text": note, "callback_data": "noop"}]] if ok
+                 else [[{"text": "Show screen", "callback_data": "screen"}]])
+        telegram.log(BOT, "phone", f"button on #{mid}: {note}")
+        answer(note)
+        if ok and r.get("kind") == "question":
+            follow_up(p, r, mid)
+        return None
+    return answer()
+
+
+def main():
+    try:
+        TG.api("setMyCommands", commands=[{"command": c, "description": d} for c, d in COMMANDS])
+    except telegram.TelegramError as e:
+        print("setMyCommands failed:", e, flush=True)
+    print(f"tg-bridge running ({BOT} bot)", flush=True)
+    offset, backoff = None, 5
+    while True:
+        try:
+            updates = TG.api("getUpdates", http_timeout=65, offset=offset, timeout=50,
+                             allowed_updates=["message", "callback_query"])
+            backoff = 5
+        except telegram.TelegramError as e:
+            print("poll failed:", e, flush=True)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 60)
+            continue
+        for u in updates:
+            offset = u["update_id"] + 1
+            try:
+                if q := u.get("callback_query"):
+                    on_button(q)
+                elif (msg := u.get("message")) and (msg.get("chat") or {}).get("id") == TG.chat \
+                        and time.time() - msg.get("date", 0) <= MAX_AGE:
+                    on_message(msg)
+            except Exception as e:             # keep the bridge alive no matter what
+                print("handler error:", repr(e), flush=True)
+                if msg := u.get("message"):
+                    say(f"Error: {e}", msg.get("message_id"))
+
+
+if __name__ == "__main__":
+    main()

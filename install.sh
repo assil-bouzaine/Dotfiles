@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO=https://github.com/assil-bouzaine/Dotfiles.git
-PACKAGES=(hypr waybar swaync kitty tmux vim zsh)
+PACKAGES=(hypr waybar swaync kitty tmux vim zsh agent-notify)
 
 PACMAN_PKGS=(
     git base-devel stow zsh tmux vim curl fzf fd lua
@@ -22,7 +22,7 @@ PACMAN_PKGS=(
     pipewire pipewire-pulse wireplumber brightnessctl playerctl
     wl-clipboard wtype grim slurp zsh-syntax-highlighting
     waybar networkmanager nm-connection-editor bluez bluez-utils blueman
-    swaync libnotify htop python python-gobject hyprsunset
+    swaync libnotify htop python python-gobject hyprsunset sound-theme-freedesktop
     ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd
 )
 AUR_PKGS=(brave-bin hex-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git)
@@ -131,6 +131,9 @@ stow_all() {
         done < <(find "$DOTFILES/$pkg" \( -type f -o -type l \) -print0)
     done
     (( moved )) && info "old files are in $backup"
+    # Shared dirs must exist first, or stow links the whole dir into the repo and
+    # everything other apps put there later would land in the repo too.
+    mkdir -p "$HOME/.local/bin" "$HOME/.local/lib" "$HOME/.config/systemd/user"
     stow -d "$DOTFILES" -t "$HOME" --restow "${PACKAGES[@]}"
 }
 
@@ -147,6 +150,8 @@ finish() {
     if [[ $HOME != /home/mclovin ]]; then
         warn "hyprlock.conf hard-codes /home/mclovin; fix that path for $HOME."
     fi
+    info "- Telegram alerts: one @BotFather bot per agent, then"
+    info "  tg-notify --bot claude setup; tg-notify --bot codex setup   (agent-notify.md)"
     info "- Verify: hyprctl configerrors   (must be empty)"
 }
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=Telegram bridge for the %i bot (your replies -> %i in tmux)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=%h/.config/tg-notify/%i.env
+
+[Service]
+ExecStart=/usr/bin/python3 %h/.local/bin/tg-bridge %i
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -12,10 +12,12 @@ stow package that mirrors `$HOME`:
 | `tmux` | `~/.tmux.conf` | tmux, wl-clipboard (Wayland copy) |
 | `vim` | `~/.vimrc` | vim |
 | `zsh` | `~/.zshrc` | zsh, oh-my-zsh + plugins (see below), fzf, fd (fast Ctrl+F folder search, falls back to find), zsh-syntax-highlighting |
+| `agent-notify` | `~/.local/bin/{agent-notify,tg-notify,tg-bridge}`, `~/.local/lib/agent-notify/`, `tg-bridge@.service`: Claude Code / Codex alerts on the desktop and in Telegram, answer from the phone | python, tmux, libnotify, libpulse (`paplay`), sound-theme-freedesktop |
 
 Shared: CaskaydiaCove Nerd Font (kitty, waybar, rofi cards, notifications, lock
 screen); JetBrains Mono Nerd Font is the fallback.
-Details per app: `hyprland.md` covers the Hyprland Lua config and the Hex dictation setup.
+Details per app: `hyprland.md` covers the Hyprland Lua config and the Hex dictation setup;
+`agent-notify.md` covers the agent alerts (what gets sent, Telegram commands, setup).
 
 ## One-command install
 
@@ -111,7 +113,8 @@ mv ~/.zshrc ~/.zshrc.omz-default   # the installer writes one; stow needs the sp
 git clone git@github.com:assil-bouzaine/Dotfiles.git ~/.dotfiles
 # no SSH key on the new PC yet? use: https://github.com/assil-bouzaine/Dotfiles.git
 cd ~/.dotfiles
-stow hypr waybar swaync kitty tmux vim zsh
+mkdir -p ~/.local/bin ~/.local/lib ~/.config/systemd/user   # so stow links files, not whole dirs
+stow hypr waybar swaync kitty tmux vim zsh agent-notify
 ```
 
 Check with `ls -la ~/.config/hypr`. You should see a `hypr -> ../.dotfiles/...`
@@ -135,6 +138,10 @@ symlink (stow folds whole directories when the target doesn't exist yet).
   right. Run `hyprctl monitors`, fix names/modes, `hyprctl reload`.
 - **Hex (voice-to-text, hold SUPER+Z):** open it once and download a model.
   The keys are Hyprland binds, see `hyprland.md` ("Hex (voice-to-text)").
+- **Telegram alerts from Claude / Codex:** make one bot per agent with
+  @BotFather, then `tg-notify --bot claude setup` and `tg-notify --bot codex setup`
+  (tokens stay in `~/.config/tg-notify/`, never in the repo). The hook entries for
+  `~/.claude/settings.json` and `~/.codex/hooks.json` are in `agent-notify.md`.
 - **Optional extras referenced in `.zshrc`:** nvm (`~/.nvm`), Android SDK
   (`~/Android/sdk`), `~/.local/bin`, `~/.opencode/bin`. Only needed if you use them.
 
