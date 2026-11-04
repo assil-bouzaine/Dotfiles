@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Your servers in a popup (prefix S): live RAM/CPU/uptime/ports, refreshed
+# every 2s, with start / stop / restart / logs. Rows come from srv-list.
+#   enter or double-click  start it if stopped, stop it if running
+#   the footer words are buttons too (mouse click acts on the selected row)
+PATH=$HOME/.local/bin:$PATH
+. picker-theme
+self=$(readlink -f "$0")
+
+msg() { tmux display-message -d 4000 "srv: $*" 2>/dev/null || echo "srv: $*" >&2; }
+
+# act ACTION ID   ACTION: toggle start stop restart logs   ID: unit:NAME | pid:PID
+act() {
+    local action=$1 kind=${2%%:*} target=${2#*:} out
+    [ -n "$2" ] || return
+    if [ "$kind" = unit ]; then
+        if [ "$action" = toggle ]; then
+            systemctl --user is-active -q "$target" && action=stop || action=start
+        fi
+        if [ "$action" = logs ]; then
+            # newest first, searchable; esc goes back to the server list
+            local logs="journalctl --user -u '$target' -n 1000 --no-hostname --no-pager -o short"
+            eval "$logs" | fzf "${PICKER_OPTS[@]}" --with-nth=1.. --tac --no-sort --exact \
+                --ghost="search ${target%.service} logs" --footer="$(hints esc back ctrl-r refresh)" \
+                --bind="enter:ignore,ctrl-r:reload($logs)" >/dev/null
+            return
+        fi
+        out=$(systemctl --user "$action" "$target" 2>&1) || msg "$action ${target%.service} failed: $out"
+    else # a plain process listening on a port
+        case $action in
+            toggle | stop)
+                kill -TERM "$target" 2>/dev/null || { msg "can't stop pid $target"; return; }
+                for _ in 1 2 3 4 5 6; do kill -0 "$target" 2>/dev/null || return; sleep 0.5; done
+                msg "pid $target is still running after SIGTERM (kill -9 $target to force it)" ;;
+            *) msg "pid $target isn't a service: no $action. Start it again from its own terminal." ;;
+        esac
+    fi
+}
+
+# Footer button clicked: print the fzf action for that word
+click() {
+    local a
+    case $FZF_CLICK_FOOTER_WORD in
+        *restart* | 󰑓) a=restart ;;
+        *start* | 󰐊) a=start ;;
+        *stop* | 󰓛) a=stop ;;
+        *logs* | 󰈙) echo "execute($self --do logs {1})+reload-sync($self --list)"; return ;;
+        *close* | 󰅖) echo abort; return ;;
+        *) return ;;
+    esac
+    echo "execute-silent($self --do $a {1})+reload-sync($self --list)"
+}
+
+case $1 in
+    --list) exec srv-list ;;
+    --do) act "$2" "$3"; exit ;;
+    --click) click; exit ;;
+esac
+
+# Live refresh: push a reload into fzf through its socket every SRV_REFRESH
+# seconds (default 2, 0 = off)
+refresh=${SRV_REFRESH:-2}
+sock=${XDG_RUNTIME_DIR:-/tmp}/srv-$$.sock
+export SRV_STATE=${XDG_RUNTIME_DIR:-/tmp}/srv-$$.cpu   # CPU counters between refreshes
+[ "$refresh" != 0 ] && (
+    until [ -S "$sock" ]; do sleep 0.2; done
+    while sleep "$refresh"; do
+        curl -fs --unix-socket "$sock" -X POST http://localhost -d "reload($self --list)" >/dev/null || break
+    done
+) &
+refresher=$!
+trap 'kill $refresher 2>/dev/null; rm -f "$sock" "$SRV_STATE"' EXIT
+
+btn() { printf '%s%s %s%s' "$(fg "$c_accent")$B" "$1" "$2" "$R"; }
+footer="$(btn 󰐊 start)    $(btn 󰓛 stop)    $(btn 󰑓 restart)    $(btn 󰈙 logs)    $(btn 󰅖 close)
+$(hints enter start/stop ctrl-s start ctrl-x stop ctrl-r restart ctrl-l logs)"
+
+do_="execute-silent($self --do"
+reload="+reload-sync($self --list)"
+srv-list | fzf "${PICKER_OPTS[@]}" --no-sort --header-lines=1 \
+    --listen="$sock" --ghost='search servers' --footer="$footer" \
+    --bind="enter:${do_} toggle {1})$reload,double-click:${do_} toggle {1})$reload" \
+    --bind="ctrl-s:${do_} start {1})$reload,ctrl-x:${do_} stop {1})$reload" \
+    --bind="ctrl-r:${do_} restart {1})$reload" \
+    --bind="ctrl-l:execute($self --do logs {1})$reload" \
+    --bind="click-footer:transform($self --click)" >/dev/null
+exit 0
