@@ -9,17 +9,21 @@ typed in after the PC was off. Agents must run in tmux.
   reply to an alert          typed into the session that sent it, then Enter
   plain message              typed into this agent (the session that alerted last)
   buttons on an alert        press that choice, if the same dialog is still on screen
+  /clear · /compact [notes]  clear or compact the agent's context
+  /model · /effort           pick from buttons, or set it straight: /model sonnet, /effort high
+  any other /command         typed into the agent as is: /context, /usage, /resume ...
   /screen                    the bottom of the agent's screen
   /key 1 · /key Escape · /key Down Enter      press keys: a letter or digit, Enter,
                              Escape, Tab, Space, BSpace, Up, Down, Left, Right, Home, End,
                              PageUp, PageDown, C-c (any C-x / M-x)
   /list                      open agents and what they're doing
-  /claude text · /codex text type into the other agent from either chat
+  /claude text · /codex text type into the other agent from either chat (/claude /clear too)
 """
 import html
 import json
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -35,8 +39,17 @@ MAX_AGE = 600
 SCREEN_CHARS = 3500
 KEY = re.compile(r"^(?:[A-Za-z0-9]|Enter|Escape|Tab|BTab|Space|BSpace|Up|Down|Left|Right"
                  r"|Home|End|PageUp|PageDown|[CM]-[a-z])$")
-COMMANDS = [("screen", "Show the agent's screen"), ("key", "Press keys, e.g. /key 1 or /key Escape"),
+COMMAND = re.compile(r"^/[a-z0-9][\w:.-]*$")
+# /effort levels each agent takes (Codex sets them with /model --reasoning=<level>)
+EFFORT = {"claude": ("low", "medium", "high", "xhigh", "max", "auto"),
+          "codex": ("low", "medium", "high", "xhigh", "max", "ultra")}
+COMMANDS = [("clear", "Clear the context (new session; the old one stays in /resume)"),
+            ("compact", "Compact the context, e.g. /compact keep the API notes"),
+            ("model", "Switch model: pick from buttons, or /model <name>"),
+            ("effort", "Change the effort: pick from buttons, or /effort high"),
+            ("screen", "Show the agent's screen"), ("key", "Press keys, e.g. /key 1 or /key Escape"),
             ("list", "Open agents"), ("help", "How this works")]
+SCREEN_BUTTON = [{"text": "Show screen", "callback_data": "screen"}]
 
 
 def say(text, reply_to=None, html_mode=False, buttons=None, silent=False):
@@ -102,14 +115,21 @@ def listing(items):
                      for p in items) or "No Claude or Codex running in tmux."
 
 
+def remember(mid, p, kind, **info):
+    """Route a message we sent to pane p: replies and its buttons then reach that session."""
+    telegram.remember(BOT, mid, pane=p["id"], agent=p["agent"], server=tmux.server(),
+                      kind=kind, **info)
+
+
 # ---- doing things in the pane -------------------------------------------------
 
-def type_into(p, text):
+def type_into(p, text, state="working"):
     tmux.tmux("load-buffer", "-b", "tgbridge", "-", input=text)
     tmux.tmux("paste-buffer", "-p", "-d", "-b", "tgbridge", "-t", p["id"])
     time.sleep(0.4)
     tmux.tmux("send-keys", "-t", p["id"], "Enter")
-    tmux.tmux("set", "-p", "-t", p["id"], "@agent_state", "working")
+    if state:
+        tmux.tmux("set", "-p", "-t", p["id"], "@agent_state", state)
 
 
 FREE_TEXT = re.compile(r"^\d+\.\s*(type something|other\b|something else|custom)", re.I)
@@ -131,7 +151,7 @@ def press(p, r, n):
         time.sleep(0.8)
         if tmux.dialog_is(p["id"], opts, anchor):
             return False, f"Pressed {n}, but the prompt is still open. Check /screen."
-    return True, f"Answered: {label}"
+    return True, f"Answered: {short(label)}"
 
 
 def show_screen(p, reply_to):
@@ -145,23 +165,170 @@ def show_screen(p, reply_to):
         f"<pre>{body}</pre>", reply_to, html_mode=True, silent=True)
 
 
-def choice_buttons(opts):
-    return [[{"text": o, "callback_data": f"opt:{o.split('.')[0]}"}] for o in opts[:9]] + \
-        [[{"text": "Show screen", "callback_data": "screen"}]]
+def short(option):
+    """A menu row without its description column: "3. Sonnet 5.5   Most efficient for…"
+    -> "3. Sonnet 5.5"."""
+    return re.split(r"\s{2,}", option)[0]
+
+
+def choice_buttons(opts, menu=False):
+    rows = [[{"text": short(o), "callback_data": f"opt:{o.split('.')[0]}"}] for o in opts[:9]]
+    return rows + [([{"text": "Cancel", "callback_data": "esc"}] if menu else []) + SCREEN_BUTTON]
 
 
 def follow_up(p, r, reply_to):
-    """Forms with several questions show them one at a time: once one is answered, send
-    the next question's choices (then the final Submit) as a new set of buttons."""
+    """Forms with several questions show them one at a time, and Codex's /model asks the
+    model, then the effort: once one is answered, send the next one's choices (then the
+    final Submit) as a new set of buttons. Returns whether there was a next one."""
     time.sleep(0.5)
-    opts, prompt = tmux.dialog(tmux.screen(p["id"]))
+    kind = "menu" if r.get("kind") == "menu" else "question"
+    # after a menu the transcript is back: a numbered list in a reply must not count
+    opts, prompt = (tmux.menu if kind == "menu" else tmux.dialog)(tmux.screen(p["id"]))
     if not opts or tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
-        return
+        return False
     sent = say(f"<b>Next:</b> {html.escape(prompt)}" if prompt else "<b>Next:</b>", reply_to,
-               html_mode=True, buttons=choice_buttons(opts), silent=True)
+               html_mode=True, buttons=choice_buttons(opts, menu=kind == "menu"), silent=True)
     if sent:
         telegram.remember(BOT, sent, pane=p["id"], agent=p["agent"], server=r.get("server"),
-                          kind="question", opts=opts, anchor=prompt)
+                          kind=kind, opts=opts, anchor=prompt, cmd=r.get("cmd"))
+    return True
+
+
+# ---- the agent's own slash commands ----------------------------------------------
+# /clear, /compact, /model, /effort and anything else that isn't the bridge's own are
+# typed into the agent. Never into a prompt (Enter would pick its highlighted answer)
+# nor mid-turn; what the agent prints back, or the menu it opens, comes back here.
+
+def heading(p, what):
+    return (f"<b>{p['agent'].capitalize()} {html.escape(what)}</b>  "
+            f"<i>{html.escape(Path(p['path']).name)}</i>")
+
+
+def on_prompt(p, r=None):
+    """The dialog p waits on, as route info for buttons, or None: the one alert r is about
+    if it's still up (it knows the subject), else any menu on screen."""
+    if r and r.get("kind") in ("approval", "question", "menu") and \
+            tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
+        return {k: r.get(k) for k in ("pane", "agent", "server", "kind", "opts", "anchor", "cmd")}
+    opts, anchor = tmux.menu(tmux.screen(p["id"]))
+    return opts and dict(pane=p["id"], agent=p["agent"], server=tmux.server(),
+                         kind="question", opts=opts, anchor=anchor)
+
+
+def hold_for_prompt(up, mid, said):
+    """Don't type: Enter in a dialog would pick its highlighted choice ("Yes"). Offer the
+    choices as buttons instead."""
+    sent = say(said, mid, buttons=choice_buttons(up["opts"], menu=up["kind"] == "menu"))
+    if sent:
+        telegram.remember(BOT, sent, **up)
+
+
+def held(p, screen, what, mid, r=None):
+    """True, after saying why, if `what` can't be typed into p right now."""
+    name = p["agent"].capitalize()
+    if up := on_prompt(p, r):
+        hold_for_prompt(up, mid, f"{name} is waiting on a prompt, so I didn't send {what}. "
+                                 "Pick an answer first.")
+        telegram.log(BOT, "phone", f"{what} held back: a prompt was on screen")
+        return True
+    if spin := tmux.busy(screen):
+        say(f"{name} is still working, so I didn't send {what}.\n{spin[:80]}\n"
+            "Send it again once it's done, or stop it first with /key Escape.", mid)
+        telegram.log(BOT, "phone", f"{what} held back: {p['agent']} was working")
+        return True
+    return False
+
+
+def slash(text, mid, reply_to=None, name=None):
+    word, args = (text.split(maxsplit=1) + [""])[:2]
+    word, args = word.split("@")[0].lower(), args.strip()
+    if not COMMAND.match(word):    # a bare "/" + Enter would run the first command listed
+        return say("That's not a command. /help lists what works here.", mid)
+    p, r, err = pick(name, reply_to)
+    if err:
+        return say(err, mid)
+    if word == "/effort":
+        if not args:
+            return effort_menu(p, mid)
+        word, args = ("/model", f"--reasoning={args.lower()}") if p["agent"] == "codex" \
+            else (word, args.lower())
+    return run(p, f"{word} {args}".rstrip(), mid, r)
+
+
+def run(p, line, mid, r=None):
+    """Type slash command `line` into p, then send back the menu it opened (as buttons)
+    or what the agent printed. Returns whether it was typed."""
+    before = tmux.screen(p["id"])
+    if held(p, before, line.split()[0], mid, r):
+        return False
+    type_into(p, line, state=None)            # most commands don't start a turn
+    telegram.log(BOT, "phone", f"{line[:60]} typed into {p['agent']} ({p['where']})")
+    word = line.split()[0]
+    for _ in range(2):                        # give a slow menu a second look
+        time.sleep(1.5)
+        after = tmux.screen(p["id"])
+        opts, anchor = tmux.menu(after)
+        if opts or tmux.busy(after) or tmux.news(before, after):
+            break
+    if opts:
+        note = "\nA tap also makes it the default for new sessions." if word == "/model" else ""
+        sent = say(f"{heading(p, line)}\nPick one:{note}", mid, html_mode=True,
+                   buttons=choice_buttons(opts, menu=True), silent=True)
+        if sent:
+            remember(sent, p, "menu", opts=opts, anchor=anchor, cmd=line)
+    elif word == "/compact" and (tmux.busy(after) or not tmux.news(before, after)):
+        ack(f"{p['agent'].capitalize()} is compacting. I'll tell you when it's done.", mid)
+        threading.Thread(target=watch, args=(p, line, before, mid), daemon=True).start()
+    elif tmux.busy(after):
+        ack(f"{p['agent'].capitalize()} is working on {word}. Its reply comes when it's done.", mid)
+    else:
+        report(p, line, tmux.news(before, after), mid,
+               open_screen=not tmux.has_input(after))
+    return True
+
+
+def report(p, line, lines, mid, silent=True, open_screen=False):
+    """What the agent printed for a command ("Set model to Sonnet 5.5 ..."). open_screen:
+    it's still showing a panel (/status, /config ...) that would swallow the next message."""
+    word = (line.split() or [""])[0]
+    if word == "/clear":
+        lines = ["Cleared: new session, empty context. The old one stays in /resume."]
+    for echo in (line, word):                 # Claude echoes the command: only what follows it
+        if echo in lines:
+            lines = lines[len(lines) - lines[::-1].index(echo):]
+            break
+    lines = [re.sub(r"^(\w+) · /effort$", r"Effort: \1", l) for l in lines][-30:]
+    body = html.escape("\n".join(lines)[-3500:]) or "Done."
+    if open_screen:
+        body += (f"\n\n<i>{p['agent'].capitalize()} still shows this screen, so anything you send "
+                 "goes into it. /key Escape closes it.</i>")
+    sent = say(f"{heading(p, line)}\n{body}", mid, html_mode=True, buttons=[SCREEN_BUTTON],
+               silent=silent)
+    if sent:
+        remember(sent, p, "command")
+
+
+def watch(p, line, before, mid, limit=900):
+    """/compact runs for a while: report what the agent says once it's no longer busy."""
+    end = time.time() + limit
+    while time.time() < end:
+        time.sleep(3)
+        if p["id"] not in {x["id"] for x in tmux.panes()}:
+            return say(f"{p['agent'].capitalize()} closed before {line} finished.", mid)
+        now = tmux.screen(p["id"])
+        if not tmux.busy(now):
+            return report(p, line, tmux.news(before, now), mid, silent=False)
+    say(f"{line} still isn't done after {limit // 60} min. Check /screen.", mid)
+
+
+def effort_menu(p, mid):
+    levels = EFFORT[p["agent"]]
+    rows = [[{"text": l, "callback_data": f"eff:{l}"} for l in levels[i:i + 3]]
+            for i in range(0, len(levels), 3)]
+    sent = say(f"{heading(p, '/effort')}\nPick a level:", mid, html_mode=True,
+               buttons=rows + [SCREEN_BUTTON], silent=True)
+    if sent:
+        remember(sent, p, "effort")
 
 
 # ---- messages -------------------------------------------------------------------
@@ -177,15 +344,11 @@ def on_message(msg):
         p, r, err = pick(reply_to=reply_to)
         if err:
             return say(err, mid)
-        if r and r.get("kind") in ("approval", "question") and \
-                tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
-            # Typing + Enter into a dialog would pick its highlighted choice ("Yes").
-            sent = say(f"{p['agent'].capitalize()} is waiting on a prompt, so I didn't type that. "
-                       "Pick an answer first, then send your text again if you still need to.",
-                       mid, buttons=choice_buttons(r["opts"]))
-            if sent:
-                telegram.remember(BOT, sent, **{k: r.get(k) for k in
-                                                ("pane", "agent", "server", "kind", "opts", "anchor")})
+        # (after "Type something." the text IS the answer the dialog waits for)
+        if not (r and r.get("kind") == "typing") and (up := on_prompt(p, r)):
+            hold_for_prompt(up, mid, f"{p['agent'].capitalize()} is waiting on a prompt, so I "
+                            "didn't type that. Pick an answer first, then send your text again "
+                            "if you still need to.")
             telegram.log(BOT, "phone", "message held back: a prompt was on screen")
             return None
         type_into(p, text)
@@ -195,12 +358,14 @@ def on_message(msg):
             follow_up(p, r, mid)
         return None
 
-    cmd, _, rest = text.partition(" ")
+    cmd, rest = (text.split(maxsplit=1) + [""])[:2]
     cmd, rest = cmd.split("@")[0].lower(), rest.strip()
 
     if cmd in ("/claude", "/codex"):
         if not rest:
             return say(f"Usage: {cmd} <text>", mid)
+        if rest.startswith("/"):
+            return slash(rest, mid, name=cmd[1:])
         p, _, err = pick(cmd[1:])
         if err:
             return say(err, mid)
@@ -229,7 +394,10 @@ def on_message(msg):
     if cmd == "/list":
         return say(listing(tmux.panes()), mid, silent=True)
 
-    return say(__doc__.split("\n\n", 2)[2].strip(), mid, silent=True)   # /start, /help, ...
+    if cmd in ("/help", "/start"):
+        return say(__doc__.split("\n\n", 2)[2].strip(), mid, silent=True)
+
+    return slash(text, mid, reply_to)            # /clear, /compact, /model ... for the agent
 
 
 def on_button(q):
@@ -262,17 +430,36 @@ def on_button(q):
         answer()
         return show_screen(p, mid)
     if data.startswith("opt:") and data[4:].isdigit():
+        before = tmux.screen(p["id"])
         ok, note = press(p, r, int(data[4:]))
         if ok and note.startswith("Now send"):   # free-text choice: let the next text through
             telegram.remember(BOT, mid, **dict(
                 {k: r.get(k) for k in ("pane", "agent", "server", "opts", "anchor")}, kind="typing"))
         keyboard([[{"text": note, "callback_data": "noop"}]] if ok
-                 else [[{"text": "Show screen", "callback_data": "screen"}]])
+                 else [SCREEN_BUTTON])
         telegram.log(BOT, "phone", f"button on #{mid}: {note}")
         answer(note)
-        if ok and r.get("kind") == "question":
-            follow_up(p, r, mid)
+        if ok and r.get("kind") in ("question", "menu") and not follow_up(p, r, mid) \
+                and r.get("kind") == "menu":     # the menu is done: what did the agent say?
+            report(p, r.get("cmd") or "", tmux.news(before, tmux.screen(p["id"])), mid)
         return None
+    if data == "esc":                            # Cancel under a menu the phone opened
+        if not tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
+            keyboard([])
+            return answer("That menu is no longer on screen.")
+        for _ in range(3):                       # Codex's effort step goes back a step first
+            tmux.tmux("send-keys", "-t", p["id"], "Escape")
+            time.sleep(0.6)
+            if not tmux.menu(tmux.screen(p["id"]))[0]:
+                break
+        keyboard([[{"text": "Cancelled", "callback_data": "noop"}]])
+        telegram.log(BOT, "phone", f"menu on #{mid} cancelled")
+        return answer("Cancelled")
+    if data.startswith("eff:") and data[4:] in EFFORT.get(p["agent"], ()):
+        level = data[4:]
+        answer(f"Effort: {level}")
+        return run(p, f"/model --reasoning={level}" if p["agent"] == "codex"
+                   else f"/effort {level}", mid)
     return answer()
 
 

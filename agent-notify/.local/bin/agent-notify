@@ -6,7 +6,7 @@
   agent-notify --dry-run claude|codex < hook.json    print the Telegram alert, send nothing
 
 Telegram (one bot per agent, see tg-notify) gets:
-  finished   the final reply, formatted for a phone
+  finished   the whole final reply, formatted for a phone (split over several messages if long)
   approval   exactly what it wants to run / edit / fetch, with the dialog's choices as buttons
   question   the question, with its options as buttons
 each with a context / 5h / weekly usage footer.
@@ -60,6 +60,7 @@ class Alert:
     anchor: str = ""          # text the dialog shows (e.g. the command): guards the buttons
     wait: int = 0             # seconds to hold back, dropped if answered meanwhile
     verb: str = ""            # header wording if not the kind's usual one
+    more: list = field(default_factory=list)   # rest of a long reply, one message each
 
 
 # ---- Claude ----------------------------------------------------------------
@@ -76,7 +77,8 @@ def claude(p):
         set_state("claude", "done", panes)
         desktop("claude", f"Claude finished · {project}",
                 markdown.preview(last) or "Task complete", "complete")
-        return Alert("claude", "done", project, markdown.convert(last), p, panes)
+        first, *more = markdown.parts(last)
+        return Alert("claude", "done", project, first, p, panes, more=more)
     if event != "Notification":
         return None
     ntype = p.get("notification_type") or ""
@@ -139,9 +141,9 @@ def codex(p):
         set_state("codex", "done", panes)
         desktop("codex", "Codex finished a turn", f"{project}: The response is ready to review.")
         last = p.get("last_assistant_message")
-        body = markdown.convert(last) if isinstance(last, str) and last.strip() \
-            else "The response is ready to review."
-        return Alert("codex", "done", project, body, p, panes)
+        first, *more = markdown.parts(last) if isinstance(last, str) and last.strip() \
+            else ["The response is ready to review."]
+        return Alert("codex", "done", project, first, p, panes, more=more)
     if event == "PermissionRequest":
         set_state("codex", "waiting", panes)
         desktop("codex", "Codex needs approval",
@@ -333,15 +335,20 @@ def desktop(agent, title_, body, sound=None):
 # ---- Telegram ----------------------------------------------------------------
 
 def compose(a):
-    """(HTML text, buttons, route info) for an alert."""
+    """([HTML message, ...], buttons, route info) for an alert. A long reply is several
+    messages: the header on the first, the usage footer and any buttons on the last."""
     verb = a.verb or VERB.get(a.kind, a.kind)
+    total = 1 + len(a.more)
     text = f"<b>{a.agent.capitalize()}{' ' + verb if verb else ''}</b>"
     if a.project:
         text += f"\n<i>{esc(a.project)}</i>"
+    if total > 1:
+        text += f"\n<i>1/{total}</i>"
     if a.body:
         text += "\n\n" + a.body
+    texts = [text] + [f"<i>{n}/{total}</i>\n\n{m}" for n, m in enumerate(a.more, 2)]
     if foot := usage.footer(a.agent, a.payload):
-        text += "\n\n" + foot
+        texts[-1] += "\n\n" + foot
     pane = a.panes[0] if a.panes else ""
     opts, buttons = [], None
     if pane and a.kind in ("approval", "question"):
@@ -353,7 +360,7 @@ def compose(a):
         buttons.append([{"text": "Show screen", "callback_data": "screen"}])
     route = dict(pane=pane, agent=a.agent, server=tmux.server(), kind=a.kind,
                  opts=opts, anchor=a.anchor[:120]) if pane else None
-    return text, buttons, route
+    return texts, buttons, route
 
 
 def still_waiting(a):
@@ -374,15 +381,20 @@ def deliver(a):
         time.sleep(a.wait)
         if not still_waiting(a):
             return note(a.agent, a.kind, f"not sent: answered within {a.wait} s")
-    text, buttons, route = compose(a)
+    texts, buttons, route = compose(a)
+    bot, mids = telegram.Bot(a.agent), []
     try:
-        mid = telegram.Bot(a.agent).send(text, html_mode=True, buttons=buttons)
+        for n, text in enumerate(texts):   # only the first one buzzes the phone
+            last = n == len(texts) - 1
+            mids.append(bot.send(text, html_mode=True, buttons=buttons if last else None,
+                                 silent=n > 0))
+            if route:                      # a reply to any part reaches this session
+                telegram.remember(a.agent, mids[-1], **route)
     except telegram.TelegramError as e:
-        return telegram.log(a.agent, a.kind, f"FAILED: {e}")
-    if route:
-        telegram.remember(a.agent, mid, **route)
-    telegram.log(a.agent, a.kind, f"sent #{mid}" + (f" with {len(route['opts'])} choices"
-                                                     if route and route["opts"] else ""))
+        sent = f" after #{', #'.join(map(str, mids))}" if mids else ""
+        return telegram.log(a.agent, a.kind, f"FAILED{sent}: {e}")
+    telegram.log(a.agent, a.kind, f"sent #{', #'.join(map(str, mids))}"
+                 + (f" with {len(route['opts'])} choices" if route and route["opts"] else ""))
 
 
 def detach():
@@ -422,8 +434,8 @@ def main():
         payload = payload if isinstance(payload, dict) else {}
         alert = (claude if agent == "claude" else codex)(payload)
         if alert and dry:
-            text, buttons, route = compose(alert)
-            print(text)
+            texts, buttons, route = compose(alert)
+            print("\n\n----- next message -----\n\n".join(texts))
             print("\nbuttons:", json.dumps(buttons), "\nroute:", json.dumps(route),
                   f"\nwait: {alert.wait}s" if alert.wait else "")
         elif alert:

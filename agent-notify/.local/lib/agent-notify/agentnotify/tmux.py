@@ -1,6 +1,7 @@
 """tmux side: find the agents' panes, read their screens, spot a dialog's numbered choices."""
 import re
 import subprocess
+from collections import Counter
 
 AGENTS = ("claude", "codex")
 FIELDS = ("id", "cmd", "tag", "state", "path", "where")
@@ -93,3 +94,80 @@ def dialog_is(pane, opts, anchor):
     """Is this exact dialog (same choices, same subject) still on the pane's screen?"""
     text = screen(pane)
     return bool(opts) and choices(text) == opts and shows(text, anchor)
+
+
+SELECTED = re.compile(r"^[❯›>▶→]\s*\d{1,2}[.)]\s")
+
+
+def menu(text):
+    """dialog(), but only one the agent is waiting on right now: one of its choices has
+    the cursor ("❯ 2. Sonnet") and it covers the input box. A numbered list in a reply,
+    or your own prompt echoed as "❯ 1. ...", has the input box under it."""
+    opts, prompt = dialog(text)
+    tail = [l.strip(BORDERS) for l in text.splitlines() if l.strip()][-30:]
+    if opts and any(SELECTED.match(l) for l in tail) and not has_input(text):
+        return opts, prompt
+    return [], ""
+
+
+# ---- busy, and what a command printed ------------------------------------------
+# Mid-turn status lines: Claude's spinner "✻ Thinking… (12s · ↓ 1.2k tokens)",
+# Codex's "• Working (5s • esc to interrupt)".
+WORKING = re.compile(r"…\s*\(\d+[hms]\b|\(\d+[hms]\b[^)]*esc to interrupt\)", re.I)
+GLYPHS = re.compile(r"^[\s⎿•■└├│┃║❯›●◐◑◒◓○◉✻✶✳✢✽·*▐▛▜▝▘▌█▀▄▔▁─━═╭╮╰╯]+")
+
+
+def tidy(line):
+    """A screen line for a phone: no leading glyphs or borders, single spaces.
+    "" if it was only decoration."""
+    line = re.sub(r"\s+", " ", GLYPHS.sub("", line)).strip(" │┃║▔▁─━═╮╯")
+    return line if re.search(r"\w", line) else ""
+
+
+def busy(text):
+    """The agent's "working" status line while it's in the middle of a turn, else ""."""
+    lines = [l for l in text.splitlines() if l.strip()][-25:]
+    return next((tidy(l) for l in reversed(lines) if WORKING.search(l)), "")
+
+
+RULE = re.compile(r"^[─━]{10,}")
+
+
+def input_line(lines):
+    """Index of the agent's input line, None while a menu or some other screen covers
+    it: Claude's "❯" sits right under a rule, Codex's "›" just above its footer."""
+    rows = [i for i, l in enumerate(lines) if l.strip()]
+    for n, k in enumerate(range(len(rows) - 1, max(len(rows) - 8, 0) - 1, -1)):
+        line = lines[rows[k]].strip(BORDERS)
+        if SELECTED.match(line):
+            continue
+        if line[:1] == "❯" and k > 0 and RULE.match(lines[rows[k - 1]].strip()):
+            return rows[k]
+        if line[:1] == "›" and n < 4:
+            return rows[k]
+    return None
+
+
+def has_input(text):
+    """Is the agent back at its input box (no menu, settings panel ... on top)?"""
+    return input_line(text.splitlines()) is not None
+
+
+def above_input(text):
+    """The screen above the agent's input box, or all of it if that isn't showing."""
+    lines = text.splitlines()
+    i = input_line(lines)
+    return lines if i is None else lines[:i]
+
+
+def news(before, after):
+    """What the agent printed between two screens: the lines above its input box in
+    `after` that weren't on screen `before`, tidied. Best effort, for confirmations."""
+    seen = Counter(before.splitlines())
+    out = []
+    for line in above_input(after):
+        if seen[line] > 0:
+            seen[line] -= 1
+        elif t := tidy(line):
+            out.append(t)
+    return out

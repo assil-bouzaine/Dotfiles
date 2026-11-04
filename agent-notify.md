@@ -11,7 +11,7 @@ Everything lives in the `agent-notify` stow package. Bot tokens don't: they stay
 
 | When | Message | Buttons |
 |---|---|---|
-| A turn ends | **Claude finished** + project, then the final reply formatted for a phone (code blocks, tables as rows, `~` paths) | none (reply to continue) |
+| A turn ends | **Claude finished** + project, then the whole final reply formatted for a phone (code blocks, tables as rows, `~` paths). Nothing is trimmed: a long reply is split over several messages marked 1/3, 2/3…, only the first one buzzes, the footer is on the last | none (reply to any part to continue) |
 | A permission prompt has waited 6 s | **Claude needs approval**: what it wants to run, edit, fetch or search, with the exact command or diff | the dialog's own choices + Show screen |
 | Claude asks a question (AskUserQuestion) | **Claude has a question** (or **has 3 questions**): every question with its options | the first question's options + Show screen; each tap brings the next question's buttons, then Submit |
 | Codex approval still open after 6 s | **Codex needs approval**: the command, or the files a patch touches + the diff | same as Claude |
@@ -35,14 +35,33 @@ in tmux.
 | a reply to an alert | typed into the session that sent it, then Enter |
 | a plain message | typed into that agent (the session that alerted last, if several are open) |
 | tap a choice under an alert | that choice is pressed, if the same dialog is still on screen; the button then says "Answered: …". "Type something." opens the answer field: send your answer as the next message |
+| `/clear` · `/compact [notes]` | the agent's own command; you get back what it printed. `/compact` says "compacting", then again (with a buzz) when it's done |
+| `/model` | the agent's model menu as buttons (Codex: model, then effort); a tap picks it and the reply says what it changed to. Cancel closes the menu. `/model sonnet` sets it straight |
+| `/effort` | effort levels as buttons; or `/effort high` straight. Codex has no `/effort`: the bridge sends `/model --reasoning=high` |
+| any other `/command` | typed into the agent as is (`/context`, `/usage`, `/resume` ...), what it prints comes back |
 | `/screen` | the bottom of the agent's screen, in monospace |
 | `/key 1` · `/key Escape` · `/key Down Enter` | raw keys (letters, digits, Enter, Escape, Tab, Space, BSpace, arrows, Home/End, PageUp/PageDown, C-x) |
 | `/list` | open agents and their state |
-| `/claude text` · `/codex text` | type into the other agent from either chat |
+| `/claude text` · `/codex text` | type into the other agent from either chat (`/claude /clear` works too) |
+
+The bridge keeps `/screen`, `/key`, `/list`, `/help`, `/start`, `/claude`, `/codex` for
+itself; every other `/command` goes to the agent. Reply to an alert to aim it at that
+session when several are open. What sticks:
+- Claude: a `/model` pick and `/effort <level>` are saved as the default for new
+  sessions (effort per model; `max` is this session only). `/clear` keeps the old session
+  in `/resume`.
+- Codex: a pick in the `/model` menu is saved as the default; the typed forms
+  (`/effort high`, `/model <name> --reasoning=<level>`) are for this session only.
 
 Safety rules in the bridge:
 - Text is never typed into a prompt that's waiting for a choice: Enter would pick its
-  highlighted answer ("Yes"). You get the choices as buttons instead.
+  highlighted answer ("Yes"). That covers any numbered dialog on screen, alert or not
+  (one with a cursor that hides the input box). You get the choices as buttons instead.
+- Slash commands wait for a free agent: none is typed while it's mid-turn (its spinner is
+  on screen); you're told to send it again later or stop it with `/key Escape`. A bare
+  `/` is refused (Enter would run whatever the command list shows first).
+- A command that leaves a panel open (`/status`, `/config` ...) says so: anything you
+  send next would go into the panel. `/key Escape` closes it.
 - A reply to an alert from a session that has since closed (or from before a reboot:
   tmux reuses pane ids) is refused instead of landing in some other pane.
 - Only panes where `claude` / `codex` is the running command count, so a stale tag on
@@ -72,8 +91,9 @@ agent-notify/                          (stow package)
   .local/bin/tg-bridge                 Telegram -> tmux, one per bot
   .local/lib/agent-notify/agentnotify/
     telegram.py   bot config, sending (retries, falls back to plain text), routes, log
-    tmux.py       agent panes, screens, spotting a dialog's numbered choices
-    markdown.py   reply Markdown -> Telegram HTML
+    tmux.py       agent panes, screens, a dialog's numbered choices, busy or not,
+                  what a command printed
+    markdown.py   reply Markdown -> Telegram HTML (parts(): whole reply, split per message)
     usage.py      the context / 5h / weekly footer
   .config/systemd/user/tg-bridge@.service   tg-bridge@claude, tg-bridge@codex
 
@@ -128,6 +148,9 @@ Outside the repo
 - **No buttons on an approval:** the alert still arrives; the dialog on screen
   couldn't be read (agent outside tmux, or the screen showed a different prompt).
   Use `/screen` and `/key`.
+- **A `/command` from the phone did nothing:** `tg-notify log` has a "phone" line for
+  each one: typed, or held back (prompt on screen / agent working). Not in the `/`
+  menu? The bridge registers it on start: `systemctl --user restart tg-bridge@claude`.
 - **See what a hook gets:** pipe a payload to `agent-notify --dry-run claude`; it
   prints the message, buttons and route without sending or touching anything.
 
