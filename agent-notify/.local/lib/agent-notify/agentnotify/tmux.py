@@ -1,9 +1,12 @@
 """tmux side: find the agents' panes, read their screens, spot a dialog's numbered choices."""
+import os
 import re
+import shlex
 import subprocess
 from collections import Counter
 
 AGENTS = ("claude", "codex")
+BIN = ["tmux"]        # tests point this at a throwaway server: ["tmux", "-L", "test"]
 FIELDS = ("id", "cmd", "tag", "state", "path", "where")
 FORMAT = "\t".join(("#{pane_id}", "#{pane_current_command}", "#{@agent_name}",
                     "#{@agent_state}", "#{pane_current_path}",
@@ -12,7 +15,7 @@ FORMAT = "\t".join(("#{pane_id}", "#{pane_current_command}", "#{@agent_name}",
 
 def tmux(*args, input=None):
     try:
-        return subprocess.run(["tmux", *args], input=input, capture_output=True,
+        return subprocess.run([*BIN, *args], input=input, capture_output=True,
                               text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -34,6 +37,56 @@ def panes():
             p["state"] = p.get("state") or "idle"
             found.append(p)
     return found
+
+
+def pane(pane_id):
+    """One pane's FIELDS, whatever runs in it; None once it's gone."""
+    out = tmux("display-message", "-p", "-t", pane_id, FORMAT).rstrip("\n")
+    p = dict(zip(FIELDS, out.split("\t")))
+    return p if p.get("id") == pane_id else None
+
+
+# ---- new windows ---------------------------------------------------------------
+
+NEW = "#{pane_id}\t#{session_name}:#{window_index}"
+
+
+def new_window(path, name, session="main"):
+    """A new shell window in `path`, in `session` if it exists, else in the session used
+    last. Starts tmux if it isn't running. Returns (pane id, "session:window"), or
+    (None, why not)."""
+    have = []
+    for line in tmux("list-sessions", "-F",
+                     "#{session_name}\t#{session_attached}\t#{session_activity}").splitlines():
+        sname, attached, activity = (line.split("\t") + ["", ""])[:3]
+        have.append((attached not in ("", "0"), int(activity or 0), sname))
+    if not have:
+        out = start_server(session, path, name)
+    else:
+        target = session if session in [s[2] for s in have] else max(have)[2]
+        out = tmux("new-window", "-d", "-P", "-F", NEW, "-t", f"={target}:", "-c", path,
+                   "-n", name)
+    pane_id, _, where = out.strip().rpartition("\n")[2].partition("\t")
+    return (pane_id, where) if pane_id.startswith("%") else (None, out.strip() or "tmux failed")
+
+
+def start_server(session, path, name):
+    """Start tmux with `session`, the way a terminal does: through an interactive shell,
+    so the server gets the full PATH ~/.zshrc sets up (TMUX is set while it loads, which
+    skips its auto-attach). It runs in a systemd scope of its own: started from the
+    bridge's service, it would otherwise be killed whenever the bridge restarts."""
+    cmd = shlex.join([*BIN, "new-session", "-d", "-P", "-F", NEW, "-s", session, "-c", path,
+                      "-n", name])
+    try:
+        r = subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "--collect",
+                            "--description=tmux, started by tg-bridge",
+                            "env", "TMUX=starting", os.environ.get("SHELL") or "/bin/sh",
+                            "-ic", f"unset TMUX; exec {cmd}"],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                           timeout=30, cwd=path)
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"couldn't start tmux: {e}"
+    return r.stdout if "\t" in r.stdout else (r.stderr.strip() or "couldn't start tmux")
 
 
 def screen(pane, history=0):
@@ -108,6 +161,48 @@ def menu(text):
     if opts and any(SELECTED.match(l) for l in tail) and not has_input(text):
         return opts, prompt
     return [], ""
+
+
+POINTER = re.compile(r"^[ │┃║|]*[❯›>▶→]\s+(?=\S)")
+
+
+def select_list(text):
+    """An unnumbered list the agent waits on, like Claude's folder trust check:
+        ❯ No, exit
+          Yes, I trust this folder
+    Returns (labels, index of the one with the cursor, the line above the list), or None.
+    The cursor must be on one of them and the input box hidden; numbered lists are
+    dialog()'s. Their rows start in the same column as the text after the cursor."""
+    if has_input(text):
+        return None
+    lines = text.splitlines()
+    rows = [i for i, l in enumerate(lines) if l.strip()][-15:]
+    at = next((i for i in reversed(rows) if POINTER.match(lines[i])), None)
+    if at is None or OPTION.match(lines[at][POINTER.match(lines[at]).end():]):
+        return None
+    col = POINTER.match(lines[at]).end()
+
+    def label(i):
+        """Row i's text if it's the cursor row or a sibling (same column), else None."""
+        if not 0 <= i < len(lines):
+            return None
+        line = lines[i]
+        if i != at and (POINTER.match(line) or line[:col].strip(" │┃║|")
+                        or len(line) <= col or line[col] == " "):
+            return None
+        return line[col:].strip(BORDERS) or None
+
+    first = at
+    while label(first - 1):
+        first -= 1
+    last = at
+    while label(last + 1):
+        last += 1
+    labels = [label(i) for i in range(first, last + 1)]
+    if len(labels) < 2:
+        return None
+    above = next((_clean(lines[i]) for i in range(first - 1, -1, -1) if _clean(lines[i])), "")
+    return labels, at - first, above
 
 
 # ---- busy, and what a command printed ------------------------------------------

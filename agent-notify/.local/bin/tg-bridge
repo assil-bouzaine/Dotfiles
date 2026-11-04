@@ -9,6 +9,8 @@ typed in after the PC was off. Agents must run in tmux.
   reply to an alert          typed into the session that sent it, then Enter
   plain message              typed into this agent (the session that alerted last)
   buttons on an alert        press that choice, if the same dialog is still on screen
+  /new                       start a new session: pick the folder, model and effort,
+                             or say them: /new radar opus high (/new ~/code/app sonnet)
   /clear · /compact [notes]  clear or compact the agent's context
   /model · /effort           pick from buttons, or set it straight: /model sonnet, /effort high
   any other /command         typed into the agent as is: /context, /usage, /resume ...
@@ -29,7 +31,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib/agent-notify"))
-from agentnotify import telegram, tmux  # noqa: E402
+from agentnotify import launch, telegram, tmux  # noqa: E402
 
 BOT = sys.argv[1] if len(sys.argv) > 1 else ""
 if BOT not in telegram.BOTS:
@@ -43,7 +45,8 @@ COMMAND = re.compile(r"^/[a-z0-9][\w:.-]*$")
 # /effort levels each agent takes (Codex sets them with /model --reasoning=<level>)
 EFFORT = {"claude": ("low", "medium", "high", "xhigh", "max", "auto"),
           "codex": ("low", "medium", "high", "xhigh", "max", "ultra")}
-COMMANDS = [("clear", "Clear the context (new session; the old one stays in /resume)"),
+COMMANDS = [("new", "Start a new session: folder, model, effort (/new radar opus high)"),
+            ("clear", "Clear the context (new session; the old one stays in /resume)"),
             ("compact", "Compact the context, e.g. /compact keep the API notes"),
             ("model", "Switch model: pick from buttons, or /model <name>"),
             ("effort", "Change the effort: pick from buttons, or /effort high"),
@@ -154,6 +157,24 @@ def press(p, r, n):
     return True, f"Answered: {short(label)}"
 
 
+def choose(p, r, i):
+    """Pick row i of an unnumbered list (Claude's folder trust check): move the cursor
+    there, check it got there, then Enter. Refused if that list is no longer on screen."""
+    opts, text = r.get("opts") or [], tmux.screen(p["id"])
+    sel = tmux.select_list(text)
+    if not sel or sel[0] != opts or i >= len(opts) or not tmux.shows(text, r.get("anchor") or ""):
+        return False, "That prompt is no longer on screen."
+    for _ in range(abs(i - sel[1])):
+        tmux.tmux("send-keys", "-t", p["id"], "Down" if i > sel[1] else "Up")
+        time.sleep(0.15)
+    time.sleep(0.3)
+    sel = tmux.select_list(tmux.screen(p["id"]))
+    if not sel or sel[0] != opts or sel[1] != i:
+        return False, "The cursor didn't land on that choice. Check /screen."
+    tmux.tmux("send-keys", "-t", p["id"], "Enter")
+    return True, f"Answered: {opts[i]}"
+
+
 def show_screen(p, reply_to):
     lines = tmux.screen(p["id"]).splitlines()
     while lines and not lines[0].strip():
@@ -206,19 +227,35 @@ def heading(p, what):
 
 def on_prompt(p, r=None):
     """The dialog p waits on, as route info for buttons, or None: the one alert r is about
-    if it's still up (it knows the subject), else any menu on screen."""
+    if it's still up (it knows the subject), else any menu on screen, numbered or not
+    (Claude's folder trust check isn't)."""
     if r and r.get("kind") in ("approval", "question", "menu") and \
             tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
         return {k: r.get(k) for k in ("pane", "agent", "server", "kind", "opts", "anchor", "cmd")}
-    opts, anchor = tmux.menu(tmux.screen(p["id"]))
-    return opts and dict(pane=p["id"], agent=p["agent"], server=tmux.server(),
-                         kind="question", opts=opts, anchor=anchor)
+    text = tmux.screen(p["id"])
+    opts, anchor = tmux.menu(text)
+    if opts:
+        return dict(pane=p["id"], agent=p["agent"], server=tmux.server(), kind="question",
+                    opts=opts, anchor=anchor)
+    if sel := tmux.select_list(text):
+        return dict(pane=p["id"], agent=p["agent"], server=tmux.server(), kind="select",
+                    opts=sel[0], anchor=sel[2])
+    return None
+
+
+def prompt_buttons(up):
+    """Buttons for a prompt on screen: numbered choices press their digit, an unnumbered
+    list (kind "select") moves the cursor to the row."""
+    if up["kind"] == "select":
+        return [[{"text": o[:60], "callback_data": f"sel:{i}"}]
+                for i, o in enumerate(up["opts"][:9])] + [SCREEN_BUTTON]
+    return choice_buttons(up["opts"], menu=up["kind"] == "menu")
 
 
 def hold_for_prompt(up, mid, said):
     """Don't type: Enter in a dialog would pick its highlighted choice ("Yes"). Offer the
     choices as buttons instead."""
-    sent = say(said, mid, buttons=choice_buttons(up["opts"], menu=up["kind"] == "menu"))
+    sent = say(said, mid, buttons=prompt_buttons(up))
     if sent:
         telegram.remember(BOT, sent, **up)
 
@@ -331,6 +368,290 @@ def effort_menu(p, mid):
         remember(sent, p, "effort")
 
 
+# ---- new sessions (/new) -----------------------------------------------------------
+# /new asks for the folder, the model and the effort with buttons, editing one message
+# as you go; whatever you type after it (/new radar opus high) skips that question. The
+# agent starts in a new tmux window the way the tmux project picker does it (a shell,
+# then the agent typed in), and its first prompt, if any, comes to you as buttons.
+# The wizard's state is a route record for its message: kind "new", dir, model, effort,
+# and "choices", the values behind the buttons it shows.
+
+def edit(mid, text, buttons=None):
+    try:
+        TG.api("editMessageText", chat_id=TG.chat, message_id=mid, text=text, parse_mode="HTML",
+               link_preview_options={"is_disabled": True},
+               reply_markup={"inline_keyboard": buttons or []})
+    except telegram.TelegramError as e:
+        if "not modified" not in str(e):
+            print("edit failed:", e, flush=True)
+
+
+def btn(text, data):
+    return {"text": text, "callback_data": data}
+
+
+def rows_of(buttons, n):
+    return [buttons[i:i + n] for i in range(0, len(buttons), n)]
+
+
+def chosen(s):
+    """The wizard's answers so far, as lines of its message."""
+    lines = [f"<b>New {BOT.capitalize()} session</b>"]
+    if s.get("dir"):
+        lines.append(f"Folder: <code>{html.escape(launch.tilde(s['dir']))}</code>")
+    if s.get("model") is not None:
+        lines.append(f"Model: {html.escape(launch.model_label(BOT, s['model']))}")
+    if s.get("effort") is not None:
+        lines.append(f"Effort: {html.escape(s['effort'] or 'default')}")
+    return lines
+
+
+def wizard(s):
+    """(text, buttons, the values behind the buttons) for what /new still needs to know."""
+    lines, nav = chosen(s), [btn("Back", "new:back"), btn("Cancel", "new:x")]
+    if s.get("note"):
+        lines.append(f"<i>{html.escape(s['note'])}</i>")
+    if s.get("missing"):
+        lines.append(f"There's no folder <code>{html.escape(launch.tilde(s['missing']))}</code>.")
+        make = [btn("Create it", "new:mk")] if Path(s["missing"]).parent.is_dir() else []
+        return "\n".join(lines), [make + nav], []
+    if not s.get("dir"):
+        dirs = [str(d) for d in launch.recent_dirs()]
+        lines.append("Which folder?")
+        return "\n".join(lines), rows_of(
+            [btn(launch.label(d), f"new:d:{i}") for i, d in enumerate(dirs)], 2) + \
+            [[btn("Other folder…", "new:d:other"), btn("Cancel", "new:x")]], dirs
+    if s.get("model") is None:
+        options, default = launch.models(BOT)
+        lines.append("Which model?")
+        return "\n".join(lines), rows_of(
+            [btn(name + (" · default" if v == default else ""), f"new:m:{i}")
+             for i, (v, name) in enumerate(options)], 2) + [nav], [v for v, _ in options]
+    levels, default = launch.efforts(BOT, s["model"])
+    lines.append("Which effort?")
+    names = [f"Default ({default})" if default else "Default"] + levels
+    return "\n".join(lines), rows_of([btn(n, f"new:e:{i}") for i, n in enumerate(names)], 3) \
+        + [nav], [""] + levels
+
+
+def show_wizard(s, mid=None, reply_to=None):
+    """Ask /new's next question, editing its message `mid` (or as a new message), or start
+    the agent once it knows everything."""
+    s = {k: v for k, v in s.items() if k not in ("mid", "t", "note", "choices")} | \
+        {"kind": "new", "agent": BOT, "note": s.get("note")}
+    if s.get("effort") and s.get("model") is not None and \
+            s["effort"] not in launch.efforts(BOT, s["model"])[0]:
+        s["note"] = f"{launch.model_label(BOT, s['model'])} doesn't take {s['effort']} effort."
+        s["effort"] = None
+    if s.get("dir") and s.get("model") is not None and s.get("effort") is not None:
+        return start(s, mid, reply_to)
+    text, rows, choices = wizard(s)
+    if mid:
+        edit(mid, text, rows)
+    else:
+        mid = say(text, reply_to, html_mode=True, buttons=rows, silent=True)
+    if mid:
+        s.pop("note")
+        telegram.remember(BOT, mid, **s, choices=choices)
+    return mid
+
+
+def wizard_input(s, words):
+    """Typed answers (/new radar opus high, or a reply to the /new message): an effort
+    level, a model, and the rest is the folder."""
+    rest = []
+    for w in words:
+        if w.lower() in launch.all_efforts(BOT):
+            s["effort"] = w.lower()
+        elif model := launch.as_model(BOT, w):
+            s["model"] = model
+        else:
+            rest.append(w)
+    if rest:
+        set_folder(s, " ".join(rest))
+
+
+def set_folder(s, text):
+    folder, missing = launch.resolve(text)
+    s["dir"], s["missing"] = (str(folder), None) if folder else (None, missing and str(missing))
+
+
+def new_session(args, mid):
+    """/new [claude|codex] [folder] [model] [effort]"""
+    words = args.split()
+    if words and words[0].lower() in tmux.AGENTS:
+        if words[0].lower() != BOT:
+            other = words[0].capitalize()
+            return say(f"This chat starts {BOT.capitalize()} sessions. For {other}, send /new "
+                       f"in the {other} chat.", mid)
+        words.pop(0)
+    s = {"dir": None, "model": None, "effort": None}
+    wizard_input(s, words)
+    return show_wizard(s, reply_to=mid)
+
+
+def ask_folder(wizard_mid):
+    """"Other folder…": a message that opens a reply on the phone; the reply is the folder."""
+    try:
+        sent = TG.api("sendMessage", retries=3, chat_id=TG.chat,
+                      text="Send the folder: a project name from ~/Projects, or a path like "
+                           "~/code/app or /mnt/data/app.",
+                      reply_parameters={"message_id": wizard_mid, "allow_sending_without_reply": True},
+                      reply_markup={"force_reply": True,
+                                    "input_field_placeholder": "radar, ~/code/app ..."})["message_id"]
+    except telegram.TelegramError as e:
+        return print("send failed:", e, flush=True)
+    telegram.remember(BOT, sent, kind="new-path", agent=BOT, wizard=wizard_mid)
+
+
+def wizard_reply(r, text, mid):
+    """Text sent as a reply to the /new message (any answer), or to its "Send the folder"
+    question (the whole text is the folder): carry on with a fresh /new message."""
+    wid = r.get("wizard") if r.get("kind") == "new-path" else r.get("mid")
+    s = telegram.route(BOT, wid) or {}
+    if s.get("kind") != "new":
+        return say("That /new is over. Send /new to start another session.", mid)
+    if r.get("kind") == "new-path":
+        set_folder(s, text)
+    else:
+        wizard_input(s, text.split())
+    try:                                         # its buttons move to the new message
+        TG.api("editMessageReplyMarkup", chat_id=TG.chat, message_id=wid,
+               reply_markup={"inline_keyboard": []})
+    except telegram.TelegramError:
+        pass
+    telegram.remember(BOT, wid, kind="new-done", agent=BOT)
+    return show_wizard(s, reply_to=mid)
+
+
+def wizard_button(mid, data, s, answer):
+    if not s or s.get("kind") != "new":
+        return answer("That's over. /new starts another session.")
+    choices = s.get("choices") or []
+    step, _, arg = data[4:].partition(":")
+    asking = {"d": not s.get("dir") and not s.get("missing"),
+              "m": bool(s.get("dir")) and s.get("model") is None,
+              "e": bool(s.get("dir")) and s.get("model") is not None and s.get("effort") is None}
+    if step == "x":
+        telegram.remember(BOT, mid, kind="new-done", agent=BOT)
+        edit(mid, "\n".join(chosen(s) + ["Cancelled."]))
+        return answer("Cancelled")
+    if step == "back":
+        if s.get("missing"):
+            s["missing"] = None
+        elif s.get("model") is not None and s.get("effort") is None:
+            s["model"] = None
+        else:
+            s["dir"] = None
+    elif step == "d" and arg == "other":
+        answer()
+        return ask_folder(mid)
+    elif step in asking:
+        if not asking[step] or not arg.isdigit() or int(arg) >= len(choices):
+            return answer("Already picked.")    # a double tap, or an older question
+        s[{"d": "dir", "m": "model", "e": "effort"}[step]] = choices[int(arg)]
+    elif step == "mk" and s.get("missing"):
+        try:
+            Path(s["missing"]).mkdir()
+        except OSError as e:
+            return answer(f"Couldn't create it: {e.strerror or e}")
+        telegram.log(BOT, "phone", f"/new: created {launch.tilde(s['missing'])}")
+        s["dir"], s["missing"] = s["missing"], None
+    else:
+        return answer()
+    answer()
+    return show_wizard(s, mid)
+
+
+def start(s, mid=None, reply_to=None):
+    """Open a tmux window in the chosen folder, type the agent's command line into it, and
+    watch it start (come_up)."""
+    name = BOT.capitalize()
+    try:
+        cmd, then = launch.command(BOT, s["model"], s["effort"])
+    except ValueError as e:
+        return say(f"Can't start {name}: {e}", reply_to or mid)
+    head = "\n".join(chosen(s)).replace(f"New {name} session", f"Starting {name}", 1)
+    if mid:
+        edit(mid, head)
+    else:
+        mid = say(head, reply_to, html_mode=True, silent=True)
+    if mid:
+        telegram.remember(BOT, mid, kind="new-done", agent=BOT)   # its buttons are done
+    pane_id, where = tmux.new_window(s["dir"], launch.window_name(s["dir"], BOT))
+    if not pane_id:
+        telegram.log(BOT, "phone", f"/new failed: {where}"[:200])
+        return say(f"Couldn't open a tmux window: {where}"[:1000], mid)
+    tmux.tmux("send-keys", "-t", pane_id, "-l", cmd)
+    tmux.tmux("send-keys", "-t", pane_id, "Enter")
+    telegram.log(BOT, "phone", f"/new: {cmd} in {launch.tilde(s['dir'])} ({where})")
+    edit(mid, f"{head}\nWindow {html.escape(where)}, waiting for {name} to start…")
+    threading.Thread(target=come_up, args=(pane_id, where, s, then, mid), daemon=True).start()
+    return mid
+
+
+def come_up(pane_id, where, s, then, mid, limit=60):
+    """Watch a new agent start: a prompt it asks first (trust this folder?) comes to you
+    as buttons; once it's at its input box, say so, with the model and effort it shows."""
+    name, t0 = BOT.capitalize(), time.time()
+    end, ran, asked = t0 + limit, False, None
+    while time.time() < end:
+        time.sleep(1)
+        info = tmux.pane(pane_id)
+        if not info:
+            return say(f"The {name} window closed before {name} was ready.", mid)
+        text = tmux.screen(pane_id)
+        if info["cmd"] != BOT:
+            if ran or time.time() - t0 > 20:      # it quit ("No, exit"), or never got going
+                tail = [t for t in map(tmux.tidy, text.splitlines()) if t][-6:]
+                telegram.log(BOT, "phone", f"/new: {BOT} {'exited' if ran else 'never started'}")
+                return say(f"{name} {'exited' if ran else 'did not start'} in {where}:\n"
+                           + "\n".join(tail), mid)
+            continue
+        ran = True
+        p = dict(info, agent=BOT)
+        if tmux.has_input(text):
+            return ready(p, where, s, then, text, mid)
+        up = on_prompt(p)
+        if up and up["opts"] != (asked or {}).get("opts"):
+            asked = up
+            lines = [t for t in map(tmux.tidy, text.splitlines()) if t]
+            first = tmux.tidy(up["opts"][0])
+            cut = next((i for i in range(len(lines) - 1, -1, -1) if lines[i].startswith(first)),
+                       len(lines))
+            body = html.escape("\n".join(lines[max(0, cut - 8):cut]))
+            sent = say(f"<b>{name} asks first</b>  <i>{html.escape(launch.label(info['path']))}</i>"
+                       f"\n{body}", mid, html_mode=True, buttons=prompt_buttons(up))
+            if sent:
+                telegram.remember(BOT, sent, **up)
+            end = time.time() + 900                # time for you to answer
+    say(f"{name} isn't ready after {int(time.time() - t0)}s. See /screen.", mid)
+
+
+def ready(p, where, s, then, text, mid):
+    """The new session is at its input box: set Codex's effort in it, then tell you, from a
+    message that routes your replies there (it's the newest, so plain messages go too)."""
+    name = BOT.capitalize()
+    detail = launch.claude_banner(text) or launch.describe(BOT, s["model"], s["effort"])
+    if then:                                  # Codex: "Model changed to gpt-6-luna low ..."
+        type_into(p, then, state=None)
+        for _ in range(10):
+            time.sleep(0.5)
+            if any("changed" in l.lower() for l in tmux.news(text, tmux.screen(p["id"]))):
+                break
+        else:
+            detail += f"\n(I typed {then} but didn't see it confirmed: check /screen)"
+    lines = [f"<b>{name} is ready</b>  <i>{html.escape(launch.label(p['path']))}</i>",
+             html.escape(detail),
+             f"<code>{html.escape(launch.tilde(p['path']))}</code>  ·  window {html.escape(where)}",
+             "Send your first message here."]
+    sent = say("\n".join(lines), mid, html_mode=True, buttons=[SCREEN_BUTTON], silent=True)
+    if sent:
+        remember(sent, p, "launch")
+    telegram.log(BOT, "phone", f"/new: {BOT} ready in {launch.tilde(p['path'])} ({where}) "
+                               + detail.split("\n")[0])
+
+
 # ---- messages -------------------------------------------------------------------
 
 def on_message(msg):
@@ -339,6 +660,11 @@ def on_message(msg):
     if not text:
         return say("Only text messages work here.", mid)
     reply_to = (msg.get("reply_to_message") or {}).get("message_id")
+
+    # a folder (model, effort) for /new; /mnt/data/app is a folder, not a command
+    if reply_to and (r := telegram.route(BOT, reply_to)) and r.get("kind") in ("new", "new-path") \
+            and (r["kind"] == "new-path" or not COMMAND.match(text.split()[0])):
+        return wizard_reply(r, text, mid)
 
     if not text.startswith("/"):
         p, r, err = pick(reply_to=reply_to)
@@ -391,6 +717,9 @@ def on_message(msg):
         telegram.log(BOT, "phone", f"/key {' '.join(keys)} in {p['agent']} ({p['where']})")
         return ack(f"Pressed {' '.join(keys)} in {p['agent'].capitalize()}", mid)
 
+    if cmd == "/new":
+        return new_session(rest, mid)
+
     if cmd == "/list":
         return say(listing(tmux.panes()), mid, silent=True)
 
@@ -420,6 +749,8 @@ def on_button(q):
             pass
 
     r = telegram.route(BOT, mid)
+    if data.startswith("new:"):                  # the /new questions: no session yet
+        return wizard_button(mid, data, r, answer)
     p = Live().of(r)
     if data == "noop":
         return answer("Already answered.")
@@ -443,6 +774,11 @@ def on_button(q):
                 and r.get("kind") == "menu":     # the menu is done: what did the agent say?
             report(p, r.get("cmd") or "", tmux.news(before, tmux.screen(p["id"])), mid)
         return None
+    if data.startswith("sel:") and data[4:].isdigit():   # a row of an unnumbered list
+        ok, note = choose(p, r, int(data[4:]))
+        keyboard([[{"text": note, "callback_data": "noop"}]] if ok else [SCREEN_BUTTON])
+        telegram.log(BOT, "phone", f"button on #{mid}: {note}")
+        return answer(note)
     if data == "esc":                            # Cancel under a menu the phone opened
         if not tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
             keyboard([])

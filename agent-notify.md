@@ -32,6 +32,7 @@ in tmux.
 
 | You send | Happens |
 |---|---|
+| `/new` | starts a new session of this chat's agent: buttons for the folder, the model and the effort (below) |
 | a reply to an alert | typed into the session that sent it, then Enter |
 | a plain message | typed into that agent (the session that alerted last, if several are open) |
 | tap a choice under an alert | that choice is pressed, if the same dialog is still on screen; the button then says "Answered: …". "Type something." opens the answer field: send your answer as the next message |
@@ -44,19 +45,50 @@ in tmux.
 | `/list` | open agents and their state |
 | `/claude text` · `/codex text` | type into the other agent from either chat (`/claude /clear` works too) |
 
-The bridge keeps `/screen`, `/key`, `/list`, `/help`, `/start`, `/claude`, `/codex` for
-itself; every other `/command` goes to the agent. Reply to an alert to aim it at that
-session when several are open. What sticks:
+The bridge keeps `/new`, `/screen`, `/key`, `/list`, `/help`, `/start`, `/claude`, `/codex`
+for itself; every other `/command` goes to the agent. (Codex's own `/new`, a fresh chat,
+is the same as its `/clear`; `/codex /new` still sends it.) Reply to an alert to aim it at
+that session when several are open. What sticks:
 - Claude: a `/model` pick and `/effort <level>` are saved as the default for new
   sessions (effort per model; `max` is this session only). `/clear` keeps the old session
   in `/resume`.
 - Codex: a pick in the `/model` menu is saved as the default; the typed forms
   (`/effort high`, `/model <name> --reasoning=<level>`) are for this session only.
 
+### Starting a session: `/new`
+
+Send `/new` in the Claude chat for Claude, in the Codex chat for Codex. One message asks,
+with buttons, and updates as you tap (Back and Cancel on each step):
+
+1. **Folder:** the 8 you used last, with either agent or in `~/Projects` (`~` always).
+   *Other folder…* asks you to type one: a project name (`radar`, any case), `~/code/app`
+   or `/mnt/data/app`. A folder that doesn't exist yet gets a *Create it* button.
+2. **Model:** Claude: Opus, Sonnet, Fable, Haiku (always the newest of each), your default
+   marked. Codex: the list from its own `/model` menu.
+3. **Effort:** Default, or a level the model takes.
+
+Or say it all at once, in any order and any case: `/new radar opus max`,
+`/new ~/.dotfiles sonnet`, `/new /mnt/data/app gpt-6-luna low`. Whatever you leave out is
+asked. Replying to the `/new` message with any of these works too.
+
+It opens a window named `<folder>:<agent>` in the tmux session `main` (the one kitty
+attaches to), the way `prefix f` does: a shell with the agent started in it, so quitting
+the agent leaves a shell. The window isn't focused, so it doesn't pull the PC away from
+what's on screen. If tmux isn't running (after a reboot, say), the bridge starts it.
+If the agent asks something before it starts (Claude: "trust this folder?" in a new
+folder), you get that as buttons. Then **Claude is ready** says the model and effort it
+runs with ("Sonnet 5.5 with high effort") and the window; your next message goes to
+that session.
+
+The model and effort are for that session only; your defaults don't change. Claude gets
+`--model`/`--effort`; Codex gets `-m`, and the bridge types `/model --reasoning=<level>`
+once it's up (Codex has no effort flag, see below).
+
 Safety rules in the bridge:
 - Text is never typed into a prompt that's waiting for a choice: Enter would pick its
   highlighted answer ("Yes"). That covers any numbered dialog on screen, alert or not
-  (one with a cursor that hides the input box). You get the choices as buttons instead.
+  (one with a cursor that hides the input box), and unnumbered lists like Claude's folder
+  trust check, where Enter means "No, exit". You get the choices as buttons instead.
 - Slash commands wait for a free agent: none is typed while it's mid-turn (its spinner is
   on screen); you're told to send it again later or stop it with `/key Escape`. A bare
   `/` is refused (Enter would run whatever the command list shows first).
@@ -91,8 +123,10 @@ agent-notify/                          (stow package)
   .local/bin/tg-bridge                 Telegram -> tmux, one per bot
   .local/lib/agent-notify/agentnotify/
     telegram.py   bot config, sending (retries, falls back to plain text), routes, log
-    tmux.py       agent panes, screens, a dialog's numbered choices, busy or not,
-                  what a command printed
+    tmux.py       agent panes, screens, a dialog's choices (numbered or not), busy or not,
+                  what a command printed, new windows (starts tmux if needed)
+    launch.py     /new: recent folders, each agent's models and effort levels, the
+                  command line
     markdown.py   reply Markdown -> Telegram HTML (parts(): whole reply, split per message)
     usage.py      the context / 5h / weekly footer
   .config/systemd/user/tg-bridge@.service   tg-bridge@claude, tg-bridge@codex
@@ -153,6 +187,9 @@ Outside the repo
   menu? The bridge registers it on start: `systemctl --user restart tg-bridge@claude`.
 - **See what a hook gets:** pipe a payload to `agent-notify --dry-run claude`; it
   prints the message, buttons and route without sending or touching anything.
+- **`/new` didn't come up:** the bridge says why (the agent exited, never started, or
+  isn't ready after a minute: see `/screen`), and `tg-notify log` has a "phone" line with
+  the command it typed and the window. No `/new` in the `/` menu: restart the bridge.
 
 ## Why it's built this way
 
@@ -170,3 +207,12 @@ Outside the repo
   cursor, Enter confirms it.
 - **Sends retry** on network errors (2, 4, 8 s), and bad markup is resent as plain
   text, so an alert isn't lost to a hiccup.
+- **Codex's effort is typed, not passed:** its only way to set it on the command line is
+  `-c model_reasoning_effort=...`, and any `-c` makes Codex run without its shared
+  background server ("requires embedded mode"). `-m` doesn't, so `/new` starts
+  `codex -m <model>` and sends `/model --reasoning=<level>` (this session only) once
+  it's up.
+- **A tmux the bridge starts gets its own systemd scope:** started from inside the
+  bridge's service it would belong to it, and a bridge restart would kill tmux with every
+  agent in it. It starts through an interactive zsh (with `TMUX` set so `~/.zshrc`
+  doesn't try to attach), so it gets the same full PATH as one kitty starts.
