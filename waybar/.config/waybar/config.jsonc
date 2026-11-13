@@ -4,11 +4,11 @@
 {
     "layer": "top",
     "position": "top",
-    "height": 30,
+    "height": 32,
     "margin-top": 4,
     "margin-left": 6,    // matches general.gaps_out in hypr/conf.d/look.lua
     "margin-right": 6,
-    "spacing": 4,
+    "spacing": 0,       // style.css joins the modules into three islands
 
     // Auto-hide: scripts/autohide.py shows the bar while the cursor is at the
     // top edge. Shown, it reserves its space and windows shrink to make room;
@@ -29,7 +29,7 @@
         "custom/notification"
     ],
 
-    // ── Groups (each one is drawn as a single pill in style.css) ─────────
+    // ── Groups (style.css joins them into three islands) ─────────────────
 
     "group/workspaces": {
         "orientation": "horizontal",
@@ -47,7 +47,7 @@
     },
     "group/stats": {
         "orientation": "horizontal",
-        "modules": ["cpu#ring", "cpu", "memory#ring", "memory", "network#speed"]
+        "modules": ["cpu", "memory", "network#speed"]
     },
     "group/apps": {
         "orientation": "horizontal",
@@ -197,7 +197,7 @@
     // ── Center ───────────────────────────────────────────────────────────
 
     "clock": {
-        "format": "{:%a %d %b  ·  %H:%M}",
+        "format": "{:%H:%M<span color='#9299a6' weight='500'>   %a %d %b</span>}",
         "tooltip-format": "<tt>{calendar}</tt>",
         "calendar": {
             "mode": "month",
@@ -216,38 +216,26 @@
 
     // ── Right: stats ─────────────────────────────────────────────────────
 
-    // cpu#ring / memory#ring: the icon with a usage ring behind it. The ring is
-    // a CSS background picked by the p0..p100 state (rings/, scripts/gen-rings.py).
-    "cpu#ring": {
-        "interval": 2,
-        "format": "󰻠",
-        "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
-        "on-click": "kitty --class bar-htop -e htop"
-    },
+    // cpu / memory: a label, the number, and a thin usage line under them. The
+    // line is a CSS background picked by the p0..p100 state (meters.css,
+    // scripts/gen-meters.py).
     "cpu": {
         "interval": 2,
-        "format": "{usage}%",
-        "states": { "warning": 70, "critical": 90 },
-        "on-click": "kitty --class bar-htop -e htop"
-    },
-    "memory#ring": {
-        "interval": 3,
-        "format": "󰍛",
-        "tooltip-format": "RAM {used:0.1f} / {total:0.1f} GiB\nSwap {swapUsed:0.1f} / {swapTotal:0.1f} GiB",
+        "format": "<span color='#9299a6'>cpu</span> {usage}%",
         "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
-        "on-click": "kitty --class bar-htop -e htop --sort-key=PERCENT_MEM"
+        "on-click": "kitty --class bar-htop -e htop"
     },
     "memory": {
         "interval": 3,
-        "format": "{percentage}%",
+        "format": "<span color='#9299a6'>ram</span> {percentage}%",
         "tooltip-format": "RAM {used:0.1f} / {total:0.1f} GiB\nSwap {swapUsed:0.1f} / {swapTotal:0.1f} GiB",
-        "states": { "warning": 75, "critical": 90 },
+        "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
         "on-click": "kitty --class bar-htop -e htop --sort-key=PERCENT_MEM"
     },
     "network#speed": {
         "interval": 1,
-        "format": "󰇚  {bandwidthDownBytes}",
-        "format-disconnected": "󰇚  --",
+        "format": "<span color='#9299a6'>󰇚</span> {bandwidthDownBytes}",
+        "format-disconnected": "<span color='#9299a6'>󰇚</span> --",
         "tooltip-format": "↓ {bandwidthDownBytes}   ↑ {bandwidthUpBytes}"
     },
 
@@ -263,7 +251,7 @@
         "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr} on {ifname}\nClick: pick network · Right-click: settings",
         "tooltip-format-ethernet": "{ipaddr} on {ifname}",
         "tooltip-format-disconnected": "Click: pick network",
-        "on-click": "pkill -x rofi || networkmanager_dmenu --config ~/.config/waybar/networkmanager-dmenu.ini",
+        "on-click": "pkill -x rofi || ~/.config/waybar/scripts/wifi.py",
         "on-click-right": "nm-connection-editor"
     },
     "bluetooth": {
@@ -275,7 +263,7 @@
         "tooltip-format": "{controller_alias}: {status}\nClick: devices · Right-click: power on/off",
         "tooltip-format-connected": "{device_enumerate}\nClick: devices · Right-click: power on/off",
         "tooltip-format-enumerate-connected": "{device_alias}",
-        "on-click": "pkill -x rofi || rofi-bluetooth -theme ~/.config/waybar/scripts/card.rasi -l 8",
+        "on-click": "pkill -x rofi || ~/.config/waybar/scripts/bluetooth.py",
         "on-click-right": "bluetoothctl show | grep -q 'Powered: yes' && bluetoothctl power off || { rfkill unblock bluetooth; sleep 1; bluetoothctl power on; }"
     },
 
@@ -291,8 +279,8 @@
     },
 
     "tray": {
-        "icon-size": 16,
-        "spacing": 8
+        "icon-size": 15,
+        "spacing": 10
     },
 
     "custom/notification": {

@@ -3,27 +3,27 @@
  * /etc/xdg/swaync/style.css, so only the differences live here. */
 
 :root {
-  --cc-bg: rgba(19, 19, 19, 0.92);
-  --noti-border-color: rgba(51, 204, 255, 0.25);
-  --noti-bg: 19, 19, 19;
-  --noti-bg-alpha: 0.92;
-  --noti-bg-darker: rgba(31, 31, 31, 0.85);
-  --noti-bg-hover: rgba(58, 74, 92, 0.45);
+  --cc-bg: rgba(16, 18, 22, 0.98);
+  --noti-border-color: rgba(255, 255, 255, 0.11);
+  --noti-bg: 16, 18, 22;
+  --noti-bg-alpha: 0.98;
+  --noti-bg-darker: rgba(255, 255, 255, 0.06);
+  --noti-bg-hover: rgba(255, 255, 255, 0.09);
   --noti-bg-focus: transparent;
   --noti-close-bg: rgba(255, 255, 255, 0.06);
   --noti-close-bg-hover: rgba(255, 255, 255, 0.14);
-  --text-color: #d6dae4;
-  --text-color-disabled: #5c6370;
+  --text-color: #eceef2;
+  --text-color-disabled: #9299a6;
   --bg-selected: #33ccff;
   --notification-icon-size: 34px;
-  --border-radius: 12px;
+  --border-radius: 14px;
   --notification-shadow: none;
   --font-size-body: 12px;
   --font-size-summary: 13px;
 }
 
 * {
-  font-family: "CaskaydiaCove Nerd Font", sans-serif;
+  font-family: "Adwaita Sans", "Noto Sans", "CaskaydiaCove Nerd Font Propo", sans-serif;
 }
 
 /* ── Popup toasts ───────────────────────────────────────────────────── */
@@ -67,7 +67,7 @@
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content .text-box .body {
-  color: #9aa3b2;
+  color: #9299a6;
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content progressbar {
@@ -115,9 +115,9 @@
 
 .control-center {
   border: 1px solid var(--noti-border-color);
-  border-radius: 12px;
+  border-radius: 16px;
   box-shadow: none;
-  padding: 6px;
+  padding: 8px;
 }
 
 .widget-title > label {
@@ -151,7 +151,7 @@
 }
 .widget-dnd > switch slider {
   border-radius: 8px;
-  background: #d6dae4;
+  background: #eceef2;
 }
 
 .control-center .control-center-list .notification {

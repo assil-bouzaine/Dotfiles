@@ -1,6 +1,6 @@
-/* Shared rofi theme for the bar's drop-down cards (Wi-Fi, Bluetooth, apps).
- * The card hangs under the bar's top-right corner (launcher.rasi flips it
- * to the left), styled like the bar pills and the swaync panel.
+/* Shared rofi theme for the bar's drop-down cards (apps, Wi-Fi, Bluetooth).
+ * Same ink, edge, font and corner as the bar islands (style.css). The card
+ * hangs under the bar's right island (launcher.rasi flips it to the left).
  *
  * Click-outside-to-close: rofi covers the whole screen with a transparent
  * window, and the empty space around the card is made of invisible
@@ -11,14 +11,17 @@ configuration {
 }
 
 * {
-    bg:       #131313eb;
-    card:     #1f1f1fd9;
-    hover:    #3a4a5cd9;
-    fg:       #d6dae4;
-    dim:      #5c6370;
+    ink:      #101216fa;
+    edge:     #ffffff1c;
+    field:    #ffffff0f;
+    lift:     #ffffff17;
+    fg:       #eceef2;
+    muted:    #9299a6;   /* also used in the menu scripts' row markup */
+    faint:    #5a616e;
     cyan:     #33ccff;
+    green:    #00ff99;
 
-    font: "CaskaydiaCove Nerd Font 11";
+    font: "Adwaita Sans Medium 11";
     background-color: transparent;
     text-color: @fg;
 }
@@ -47,41 +50,42 @@ button-dismiss-bottom {
 }
 button-dismiss-side   { expand: true; }
 button-dismiss-bottom { expand: true; }
-button-dismiss-edge   { expand: false; padding: 0 3px; }  /* 6px gap to screen edge */
-button-dismiss-top    { expand: false; padding: 9px 0; }  /* ~38px: bar height + gap */
+button-dismiss-edge   { expand: false; padding: 0 3px; }   /* 6px gap to screen edge */
+button-dismiss-top    { expand: false; padding: 11px 0; }  /* bar (4 + 32) + 6px gap */
 
 mainbox {
     expand: false;
-    width: 360px;
-    padding: 12px;
-    spacing: 10px;
+    width: 380px;
+    padding: 10px;
+    spacing: 8px;
     border: 1px;
-    border-color: #33ccff40;
-    border-radius: 12px;
-    background-color: @bg;
+    border-color: @edge;
+    border-radius: 16px;
+    background-color: @ink;
     children: [ inputbar, message, listview ];
 }
 
 inputbar {
-    padding: 8px 12px;
+    padding: 9px 14px;
     spacing: 10px;
-    border-radius: 9px;
-    background-color: @card;
+    border-radius: 10px;
+    background-color: @field;
     children: [ prompt, entry ];
 }
-prompt { text-color: @cyan; }
+prompt { text-color: @cyan; font: "Adwaita Sans Bold 11"; }
 entry {
     placeholder: "Search";
-    placeholder-color: @dim;
+    placeholder-color: @faint;
     cursor: text;
 }
 
-message {
-    padding: 8px 12px;
-    border-radius: 9px;
-    background-color: @card;
+/* one quiet line of help under the search field */
+message { padding: 0 14px; }
+textbox {
+    text-color: @muted;
+    font: "Adwaita Sans 10";
+    markup: true;
 }
-textbox { text-color: @dim; markup: true; }
 
 listview {
     /* Must be a fixed height: anything dynamic collapses to 0 rows inside
@@ -89,21 +93,22 @@ listview {
     lines: 7;
     fixed-height: true;
     scrollbar: false;
-    spacing: 4px;
+    spacing: 2px;
 }
 
 element {
-    padding: 8px 12px;
-    border-radius: 9px;
+    padding: 8px 14px;
+    spacing: 12px;
+    border-radius: 10px;
     cursor: pointer;
+    children: [ element-text ];
 }
 element normal.normal,
-element alternate.normal { background-color: transparent; }
-element selected.normal  { background-color: @hover; }
-/* Rows passed with -a (networkmanager-dmenu: the connected network) */
+element alternate.normal,
 element normal.active,
-element alternate.active { background-color: transparent; text-color: @cyan; }
-element selected.active  { background-color: @hover; text-color: @cyan; }
+element alternate.active   { background-color: transparent; }
+element selected.normal,
+element selected.active    { background-color: @lift; }
 element-text {
     text-color: inherit;
     vertical-align: 0.5;

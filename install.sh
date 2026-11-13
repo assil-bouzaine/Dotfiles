@@ -23,9 +23,9 @@ PACMAN_PKGS=(
     wl-clipboard wtype grim slurp zsh-syntax-highlighting
     waybar networkmanager nm-connection-editor bluez bluez-utils blueman
     swaync libnotify htop python python-gobject hyprsunset sound-theme-freedesktop
-    ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd
+    ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd adwaita-fonts
 )
-AUR_PKGS=(brave-bin hex-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git)
+AUR_PKGS=(brave-bin hex-bin xwaylandvideobridge)
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }

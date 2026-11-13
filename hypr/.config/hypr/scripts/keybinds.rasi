@@ -9,14 +9,14 @@ configuration {
 }
 
 * {
-    bg:       #131313fc;
-    card:     #1f1f1fd9;
-    hover:    #3a4a5c99;
-    fg:       #d6dae4;
-    dim:      #5c6370;
+    bg:       #101216fa;
+    card:     #ffffff0f;
+    hover:    #ffffff17;
+    fg:       #eceef2;
+    dim:      #9299a6;
     cyan:     #33ccff;
 
-    font: "CaskaydiaCove Nerd Font 11";
+    font: "Adwaita Sans Medium 11";
     background-color: transparent;
     text-color: @fg;
 }
@@ -47,8 +47,8 @@ mainbox {
     padding: 14px;
     spacing: 10px;
     border: 1px;
-    border-color: #33ccff40;
-    border-radius: 14px;
+    border-color: #ffffff1c;
+    border-radius: 16px;
     background-color: @bg;
     children: [ inputbar, listview ];
 }
@@ -60,7 +60,7 @@ inputbar {
     background-color: @card;
     children: [ prompt, entry, num-filtered-rows, textbox-sep, num-rows ];
 }
-prompt { text-color: @cyan; }
+prompt { text-color: @cyan; font: "Adwaita Sans Bold 11"; }
 entry {
     placeholder: "Search what it does, or a key…";
     placeholder-color: @dim;
@@ -80,12 +80,13 @@ listview {
 
 element {
     padding: 7px 10px;
-    border-radius: 9px;
+    border-radius: 10px;
 }
 element normal.normal,
 element alternate.normal { background-color: transparent; }
 element selected.normal  { background-color: @hover; }
 element-text {
+    font: "CaskaydiaCove Nerd Font 11";  /* monospace: keybinds.lua pads the key column with spaces */
     text-color: inherit;
     vertical-align: 0.5;
     highlight: underline;

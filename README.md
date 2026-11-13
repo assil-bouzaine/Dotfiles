@@ -6,7 +6,7 @@ stow package that mirrors `$HOME`:
 | Package | Manages | Needs (beyond base) |
 |---|---|---|
 | `hypr` | `~/.config/hypr/` (Lua config, hyprlock, hypridle, wallpaper scripts) | hyprland, hypridle, hyprlock, awww, kitty, dolphin + gwenview + archlinux-xdg-menu, polkit-kde-agent, rofi, brave-bin (AUR), hex-bin (AUR) + wtype, xwaylandvideobridge (AUR), xdg-desktop-portal-hyprland, gnome-keyring, brightnessctl, pipewire + wireplumber (wpctl), playerctl, grim + slurp + wl-clipboard (screenshots) |
-| `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, networkmanager-dmenu-git + rofi-bluetooth-git (AUR), swaync + libnotify, htop, python + python-gobject, hyprsunset, rofi, CaskaydiaCove Nerd Font |
+| `waybar` | `~/.config/waybar/` (top bar, app launcher / Wi-Fi / Bluetooth cards, workspace script) | waybar, networkmanager + nm-connection-editor, bluez + bluez-utils + blueman, swaync + libnotify, htop, python + python-gobject, hyprsunset, rofi, adwaita-fonts (Adwaita Sans), CaskaydiaCove Nerd Font (icons) |
 | `swaync` | `~/.config/swaync/` (small toasts styled like the bar, 10s timeout, no grouping) | swaync |
 | `kitty` | `~/.config/kitty/` | kitty, CaskaydiaCove Nerd Font |
 | `tmux` | `~/.tmux.conf` | tmux, wl-clipboard (Wayland copy) |
@@ -14,8 +14,9 @@ stow package that mirrors `$HOME`:
 | `zsh` | `~/.zshrc` | zsh, oh-my-zsh + plugins (see below), fzf, fd (fast Ctrl+F folder search, falls back to find), zsh-syntax-highlighting |
 | `agent-notify` | `~/.local/bin/{agent-notify,tg-notify,tg-bridge}`, `~/.local/lib/agent-notify/`, `tg-bridge@.service`: Claude Code / Codex alerts on the desktop and in Telegram, answer from the phone | python, tmux, libnotify, libpulse (`paplay`), sound-theme-freedesktop |
 
-Shared: CaskaydiaCove Nerd Font (kitty, waybar, rofi cards, notifications, lock
-screen); JetBrains Mono Nerd Font is the fallback.
+Shared: Adwaita Sans for the bar, rofi cards and notifications, with
+CaskaydiaCove Nerd Font for their icons and for kitty and the lock screen;
+JetBrains Mono Nerd Font is the fallback.
 Details per app: `hyprland.md` covers the Hyprland Lua config and the Hex dictation setup;
 `agent-notify.md` covers the agent alerts (what gets sent, Telegram commands, setup).
 
@@ -53,7 +54,7 @@ sudo pacman -S --needed git base-devel stow zsh tmux vim curl fzf fd lua \
   wl-clipboard wtype grim slurp zsh-syntax-highlighting \
   waybar networkmanager nm-connection-editor bluez bluez-utils blueman \
   swaync libnotify htop python python-gobject hyprsunset \
-  ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd
+  ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd adwaita-fonts
 ```
 
 What the less obvious ones are for:
@@ -89,7 +90,7 @@ sudo systemctl enable --now NetworkManager bluetooth
 ```bash
 git clone https://aur.archlinux.org/yay-bin.git /tmp/yay-bin
 (cd /tmp/yay-bin && makepkg -si)
-yay -S brave-bin hex-bin xwaylandvideobridge networkmanager-dmenu-git rofi-bluetooth-git
+yay -S brave-bin hex-bin xwaylandvideobridge
 ```
 
 Optional: `hyprshutdown` (SUPER+M uses it if installed, otherwise plain exit),
@@ -172,8 +173,8 @@ it.
 | Keys | Does |
 |---|---|
 | SUPER + D | app launcher card |
-| SUPER + N | Wi-Fi card: [networkmanager-dmenu](https://github.com/firecat53/networkmanager-dmenu) (pick a network, rescan, Wi-Fi on/off) |
-| SUPER + B | Bluetooth card: [rofi-bluetooth](https://github.com/nickclyde/rofi-bluetooth) (power, scan, pick a device to connect / pair / trust) |
+| SUPER + N | Wi-Fi card: `waybar/scripts/wifi.py` (pick a network, Shift + Delete forgets it, rescan, Wi-Fi on/off) |
+| SUPER + B | Bluetooth card: `waybar/scripts/bluetooth.py` (power, scan, pick a device to connect / pair, Shift + Delete forgets it) |
 | SUPER + L | lock screen |
 | SUPER + 1…0 | workspaces (also clickable on the bar) |
 

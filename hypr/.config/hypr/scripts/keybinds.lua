@@ -161,7 +161,7 @@ end
 for _, r in ipairs(rows) do
     local caps = {}
     for _, c in ipairs(r.caps) do
-        caps[#caps + 1] = '<span background="#2b3440" foreground="#33ccff" weight="bold"> ' .. esc(c) .. ' </span>'
+        caps[#caps + 1] = '<span background="#262a31" foreground="#33ccff" weight="bold"> ' .. esc(c) .. ' </span>'
     end
     io.write(table.concat(caps, " "), string.rep(" ", keyw - r.w + 3), esc(r.text), "\n")
 end

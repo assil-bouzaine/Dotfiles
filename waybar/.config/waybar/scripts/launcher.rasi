@@ -1,11 +1,11 @@
-/* App launcher card (bar's Arch logo, SUPER + D): same look as the Wi-Fi
- * card, dropping down under the bar's top-left corner. */
+/* App launcher card (bar's Arch logo, SUPER + D): the shared card,
+ * dropping down under the bar's left island. */
 
 @import "card.rasi"
 
 configuration {
     show-icons: true;
-    display-drun: "󰍉";
+    display-drun: "Apps";
     drun-display-format: "{name}";
 }
 
@@ -17,7 +17,7 @@ entry { placeholder: "Search apps"; }
 
 listview { lines: 8; dynamic: false; }
 
-element { spacing: 12px; }
+element { children: [ element-icon, element-text ]; }
 element-icon {
     size: 22px;
     vertical-align: 0.5;

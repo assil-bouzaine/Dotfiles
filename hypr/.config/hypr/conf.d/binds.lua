@@ -18,8 +18,8 @@ hl.bind(mainMod .. " + M",      hl.dsp.exec_cmd("command -v hyprshutdown >/dev/n
 hl.bind(mainMod .. " + F",      hl.dsp.exec_cmd(fileManager), { description = "Open file manager (Dolphin)" })
 hl.bind(mainMod .. " + V",      hl.dsp.window.float({ action = "toggle" }), { description = "Toggle floating for the active window" })
 hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd(cards .. "rofi -show drun -theme ~/.config/waybar/scripts/launcher.rasi"), { description = "Open app launcher" })
-hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd(cards .. "networkmanager_dmenu --config ~/.config/waybar/networkmanager-dmenu.ini"), { description = "Open Wi-Fi / network menu" })
-hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(cards .. "rofi-bluetooth -theme ~/.config/waybar/scripts/card.rasi -l 8"), { description = "Open Bluetooth menu" })
+hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/wifi.py"), { description = "Open Wi-Fi / network menu" })
+hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/bluetooth.py"), { description = "Open Bluetooth menu" })
 hl.bind(mainMod .. " + P",      hl.dsp.window.pseudo(), { description = "Toggle pseudo-tiling for the active window" }) -- dwindle
 hl.bind("SUPER + L",            hl.dsp.exec_cmd("hyprlock"), { description = "Lock the screen" })
 
