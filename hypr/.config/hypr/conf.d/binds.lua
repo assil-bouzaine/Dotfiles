@@ -20,6 +20,7 @@ hl.bind(mainMod .. " + V",      hl.dsp.window.float({ action = "toggle" }), { de
 hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd(cards .. "rofi -show drun -theme ~/.config/waybar/scripts/launcher.rasi"), { description = "Open app launcher" })
 hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/wifi.py"), { description = "Open Wi-Fi / network menu" })
 hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/bluetooth.py"), { description = "Open Bluetooth menu" })
+hl.bind(mainMod .. " + T",      hl.dsp.exec_cmd("~/.config/waybar/scripts/tasks.py"), { description = "Open / close task manager (memory and CPU per app)" })
 hl.bind(mainMod .. " + P",      hl.dsp.window.pseudo(), { description = "Toggle pseudo-tiling for the active window" }) -- dwindle
 hl.bind("SUPER + L",            hl.dsp.exec_cmd("hyprlock"), { description = "Lock the screen" })
 

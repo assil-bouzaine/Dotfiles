@@ -174,6 +174,7 @@ it.
 |---|---|
 | SUPER + D | app launcher card |
 | SUPER + N | Wi-Fi card: `waybar/scripts/wifi.py` (pick a network, Shift + Delete forgets it, rescan, Wi-Fi on/off) |
+| SUPER + T | Task manager window: `waybar/scripts/tasks.py` (memory and CPU per app, live; the x on a row ends the app) |
 | SUPER + B | Bluetooth card: `waybar/scripts/bluetooth.py` (power, scan, pick a device to connect / pair, Shift + Delete forgets it) |
 | SUPER + L | lock screen |
 | SUPER + 1…0 | workspaces (also clickable on the bar) |

@@ -223,14 +223,14 @@
         "interval": 2,
         "format": "<span color='#9299a6'>cpu</span> {usage}%",
         "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
-        "on-click": "kitty --class bar-htop -e htop"
+        "on-click": "~/.config/waybar/scripts/tasks.py"
     },
     "memory": {
         "interval": 3,
         "format": "<span color='#9299a6'>ram</span> {percentage}%",
         "tooltip-format": "RAM {used:0.1f} / {total:0.1f} GiB\nSwap {swapUsed:0.1f} / {swapTotal:0.1f} GiB",
         "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
-        "on-click": "kitty --class bar-htop -e htop --sort-key=PERCENT_MEM"
+        "on-click": "~/.config/waybar/scripts/tasks.py"
     },
     "network#speed": {
         "interval": 1,

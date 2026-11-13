@@ -234,6 +234,16 @@ hl.window_rule({
     size   = "800 520",
 })
 
+-- Task manager (waybar/scripts/tasks.py, SUPER + T) floats in the middle
+hl.window_rule({
+    name  = "bar-tasks-floating",
+    match = { class = "^(bar-tasks|bar\\.tasks)$" },
+
+    float  = true,
+    center = true,
+    size   = "580 620",
+})
+
 -- Volume Control (pavucontrol) always floats, small and centered
 hl.window_rule({
     name  = "pavucontrol-floating",
