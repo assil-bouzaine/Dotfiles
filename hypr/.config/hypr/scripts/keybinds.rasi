@@ -1,0 +1,92 @@
+/* Keybind cheat sheet (keybinds.sh): a centered floating card in the same
+ * style as the bar's drop-down cards (waybar/scripts/card.rasi).
+ *
+ * Click-outside-to-close: rofi covers the screen with a transparent window
+ * and the space around the card is invisible buttons bound to kb-cancel. */
+
+configuration {
+    click-to-exit: true;
+}
+
+* {
+    bg:       #131313fc;
+    card:     #1f1f1fd9;
+    hover:    #3a4a5c99;
+    fg:       #d6dae4;
+    dim:      #5c6370;
+    cyan:     #33ccff;
+
+    font: "CaskaydiaCove Nerd Font 11";
+    background-color: transparent;
+    text-color: @fg;
+}
+
+window {
+    fullscreen: true;
+    background-color: #00000055;
+    orientation: horizontal;
+    children: [ dismiss-left, column, dismiss-right ];
+}
+
+column {
+    expand: false;
+    orientation: vertical;
+    children: [ dismiss-top, mainbox, dismiss-bottom ];
+}
+
+dismiss-left, dismiss-right, dismiss-top, dismiss-bottom {
+    expand: true;
+    content: "";
+    action: "kb-cancel";
+    cursor: default;
+}
+
+mainbox {
+    expand: false;
+    width: 760px;
+    padding: 14px;
+    spacing: 10px;
+    border: 1px;
+    border-color: #33ccff40;
+    border-radius: 14px;
+    background-color: @bg;
+    children: [ inputbar, listview ];
+}
+
+inputbar {
+    padding: 10px 14px;
+    spacing: 12px;
+    border-radius: 10px;
+    background-color: @card;
+    children: [ prompt, entry, num-filtered-rows, textbox-sep, num-rows ];
+}
+prompt { text-color: @cyan; }
+entry {
+    placeholder: "Search what it does, or a key…";
+    placeholder-color: @dim;
+    cursor: text;
+}
+num-filtered-rows, num-rows { expand: false; text-color: @dim; }
+textbox-sep { expand: false; str: "/"; text-color: @dim; }
+
+listview {
+    /* Fixed height on purpose: dynamic collapses to 0 rows inside the
+     * non-expanding column (same as card.rasi). */
+    lines: 15;
+    fixed-height: true;
+    scrollbar: false;
+    spacing: 2px;
+}
+
+element {
+    padding: 7px 10px;
+    border-radius: 9px;
+}
+element normal.normal,
+element alternate.normal { background-color: transparent; }
+element selected.normal  { background-color: @hover; }
+element-text {
+    text-color: inherit;
+    vertical-align: 0.5;
+    highlight: underline;
+}
