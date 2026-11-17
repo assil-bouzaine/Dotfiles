@@ -1,15 +1,14 @@
 #!/usr/bin/env lua
--- Prints every Hyprland keybind as one pango-markup row for rofi (keybinds.sh).
+-- Prints every Hyprland keybind as aligned terminal text, or --json for KeysCard.
 --
 -- `hyprctl binds` is useless with the Lua config (it only reports
 -- "HL.Dispatcher(exec_cmd)"), so this runs the config files that call
 -- hl.bind() against a fake `hl` that records each bind instead of applying it.
 -- Loops, variables and string concatenation are therefore resolved for real.
--- Each row is the keys plus the bind's `description` (plain English, set in
--- binds.lua); that text is what rofi searches.
+-- JSON includes comment-derived groups and replayable dispatcher expressions.
 
 local dir = (os.getenv("HOME") or "") .. "/.config/hypr/conf.d"
-local LABEL_MAX = 60
+local json_mode = arg[1] == "--json"
 
 local binds, sources = {}, {}
 
@@ -17,7 +16,7 @@ local binds, sources = {}, {}
 local function dsp(path)
     return setmetatable({}, {
         __index = function(_, k) return dsp(path == "" and k or (path .. "." .. k)) end,
-        __call  = function(_, ...) return { path = path, args = { ... } } end,
+        __call  = function(_, ...) return { path = path, args = table.pack(...) } end,
     })
 end
 
@@ -110,15 +109,28 @@ local function label(action)
     return name, false
 end
 
--- First comment line of the paragraph (blank-line separated block) holding `line`.
+-- Preserve the description fallback: first comment of the bind's paragraph.
 local function section(file, line)
     local lines = sources[file]
     if not lines then return "" end
     local start = line
     while start > 1 and lines[start - 1]:match("%S") do start = start - 1 end
-    local text = lines[start]:match("^%s*%-%-+%s*(.+)$")
-    if not text then return "" end
-    return text
+    return lines[start]:match("^%s*%-%-+%s*(.+)$") or ""
+end
+
+-- Groups use the nearest full-line comment block, including across local
+-- variables, loops and helper functions. Inline comments aren't section titles.
+local function nearest_section(file, line)
+    local lines = sources[file]
+    if not lines then return "" end
+    for i = line - 1, 1, -1 do
+        if lines[i]:match("^%s*%-%-") then
+            local start = i
+            while start > 1 and lines[start - 1]:match("^%s*%-%-") do start = start - 1 end
+            return lines[start]:match("^%s*%-%-+%s*(.-)%s*$") or ""
+        end
+    end
+    return ""
 end
 
 local function tidy(text, is_label)
@@ -126,28 +138,96 @@ local function tidy(text, is_label)
     return (text:gsub("%. .*$", ""):gsub("[.:]$", ""))
 end
 
--- ── output ──────────────────────────────────────────────────────────────────
-local function esc(s) return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
-local function ulen(s) return select(2, s:gsub("[^\128-\191]", "")) end
-local function cut(s, n)
-    if ulen(s) <= n then return s end
-    local i, count = 1, 0
-    while count < n - 1 do
-        i = i + 1
-        while (s:byte(i) or 0) >= 128 and s:byte(i) < 192 do i = i + 1 end
-        count = count + 1
+-- Long explanatory comments share a concise title with their neighbouring
+-- binds. New comment blocks still get a title without maintaining a second list
+-- of keybinds here.
+local GROUPS = {
+    { "drop-down cards", "Apps and cards" },
+    { "keybindings", "Apps and cards" },
+    { "layouts, dock and pickers", "Layouts, dock and pickers" },
+    { "keybind cheat sheet", "Keybinds" },
+    { "keybinds card", "Keybinds" },
+    { "dictation", "Dictation" },
+    { "window groups", "Window groups" },
+    { "next tab", "Window groups" },
+    { "move focus", "Focus" },
+    { "scratchpad", "Scratchpad" },
+    { "workspaces", "Workspaces" },
+    { "keyboard layout", "Keyboard layout" },
+    { "screenshots", "Screenshots" },
+    { "send to phone", "Send to phone" },
+    { "move/resize windows", "Move and resize" },
+    { "multimedia keys", "Media keys" },
+    { "switch sound", "Media keys" },
+    { "requires playerctl", "Media keys" },
+    { "universal copy / paste", "Clipboard" },
+}
+
+local function group_title(text, previous)
+    if text == "" then return previous end
+    local lower = text:lower()
+    if lower:match("^fallback ") then return previous end
+    for _, entry in ipairs(GROUPS) do
+        if lower:find(entry[1], 1, true) then return entry[2] end
     end
-    return s:sub(1, i - 1) .. "…"
+    local title = tidy(text, false):gsub("%s*%b()", "")
+    local words = {}
+    for word in title:gmatch("%S+") do
+        if #words == 6 then break end
+        words[#words + 1] = word
+    end
+    return #words > 0 and table.concat(words, " ") or previous
 end
 
-local rows, keyw = {}, 0
+-- Serialize values as Lua, not shell text: hyprctl receives the whole expression
+-- as one argument. Explicit table keys preserve arrays, maps and boolean keys.
+local function lua_literal(v)
+    local kind = type(v)
+    if kind == "string" then return string.format("%q", v) end
+    if kind == "nil" or kind == "number" or kind == "boolean" then return tostring(v) end
+    assert(kind == "table", "unsupported dispatcher argument: " .. kind)
+    local keys, fields = {}, {}
+    for k in pairs(v) do keys[#keys + 1] = k end
+    table.sort(keys, function(a, b)
+        if type(a) ~= type(b) then return type(a) < type(b) end
+        if type(a) == "boolean" then return not a and b end
+        return a < b
+    end)
+    for _, k in ipairs(keys) do
+        fields[#fields + 1] = "[" .. lua_literal(k) .. "] = " .. lua_literal(v[k])
+    end
+    return "{ " .. table.concat(fields, ", ") .. " }"
+end
+
+local function runnable(b)
+    if b.opts.mouse or b.opts.release or type(b.action) ~= "table" or not b.action.path then return "" end
+    local args = {}
+    for i = 1, b.action.args.n do args[i] = lua_literal(b.action.args[i]) end
+    return "hl.dsp." .. b.action.path .. "(" .. table.concat(args, ", ") .. ")"
+end
+
+local JSON_ESC = {
+    ['"'] = '\\"', ["\\"] = "\\\\", ["\b"] = "\\b", ["\f"] = "\\f",
+    ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t",
+}
+local function json_string(s)
+    return '"' .. s:gsub('[%z\1-\31\\"]', function(c)
+        return JSON_ESC[c] or string.format("\\u%04x", c:byte())
+    end) .. '"'
+end
+
+-- ── output ──────────────────────────────────────────────────────────────────
+local function ulen(s) return select(2, s:gsub("[^\128-\191]", "")) end
+local rows, keyw, group = {}, 0, "Apps and cards"
+local previous_section
 for _, b in ipairs(binds) do
     local caps = keycaps(b.keys)
-    local w = #caps - 1
-    for _, c in ipairs(caps) do w = w + ulen(c) + 2 end
-    if w > keyw then keyw = w end
-    -- Shown (and searched) text: the bind's `description`. Binds without one
-    -- fall back to their comment, then to the dispatcher / command.
+    local comment = nearest_section(b.file, b.line)
+    if previous_section ~= nil and comment ~= previous_section then group = group_title(comment, group) end
+    previous_section = comment
+    local keys = table.concat(caps, " + ")
+    keyw = math.max(keyw, ulen(keys))
+    -- Binds without descriptions fall back to their comment, then the action.
     local text = b.opts.description
     if not text or text == "" then
         local auto = label(b.action)
@@ -155,13 +235,25 @@ for _, b in ipairs(binds) do
         text = sec ~= "" and tidy(sec, true) or auto
         if b.opts.release then text = text .. "  (on release)" end
     end
-    rows[#rows + 1] = { caps = caps, w = w, text = cut(text, LABEL_MAX) }
+    rows[#rows + 1] = {
+        caps = caps, keys = keys, description = text, group = group,
+        combo = b.keys:match("^%s*(.-)%s*$"):gsub("%s*%+%s*", " + "):upper(),
+        run = runnable(b),
+    }
 end
 
-for _, r in ipairs(rows) do
-    local caps = {}
-    for _, c in ipairs(r.caps) do
-        caps[#caps + 1] = '<span background="#262a31" foreground="#33ccff" weight="bold"> ' .. esc(c) .. ' </span>'
+if json_mode then
+    io.write('{"binds":[\n')
+    for i, r in ipairs(rows) do
+        local caps = {}
+        for _, c in ipairs(r.caps) do caps[#caps + 1] = json_string(c) end
+        io.write('  {"keys":[', table.concat(caps, ","), '],"combo":', json_string(r.combo),
+            ',"description":', json_string(r.description), ',"group":', json_string(r.group),
+            ',"run":', json_string(r.run), "}", i < #rows and ",\n" or "\n")
     end
-    io.write(table.concat(caps, " "), string.rep(" ", keyw - r.w + 3), esc(r.text), "\n")
+    io.write("]}\n")
+else
+    for _, r in ipairs(rows) do
+        io.write(r.keys, string.rep(" ", keyw - ulen(r.keys) + 3), r.description, "\n")
+    end
 end

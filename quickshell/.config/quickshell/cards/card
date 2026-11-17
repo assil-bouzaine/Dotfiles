@@ -1,0 +1,26 @@
+#!/bin/bash
+# Open / close one of the desktop's cards:
+#   card netcard | bluetooth | agents | apps | themes | fonts | keys
+# They share one Quickshell instance (shell.qml next to this file), normally
+# started at login; if it isn't running, the first press starts it.
+name=${1:?usage: card netcard|bluetooth|agents|apps|themes|fonts|keys}
+case $name in
+    apps) target=dock ;;      # the dock's app grid
+    *)    target=$name ;;
+esac
+
+call() { qs ipc -c cards call "$target" "$@" >/dev/null 2>&1; }
+
+pkill -x rofi && exit 0          # a rofi card was open: that press closes it
+call toggle && exit 0
+
+if ! command -v qs >/dev/null; then
+    notify-send "Cards" "Quickshell is not installed (pacman -S quickshell)"
+    exit 1
+fi
+qs -c cards -d >/dev/null 2>&1
+for _ in $(seq 60); do
+    sleep 0.05
+    call open && exit 0
+done
+notify-send "Cards" "Quickshell didn't start: run  qs -c cards  to see why"

@@ -1,0 +1,493 @@
+#!/usr/bin/env python3
+"""theme: switch the desktop's colours and font in one go (like Omarchy 4.5).
+
+    theme                      show the current theme and font
+    theme list [--json]        themes you can pick
+    theme set NAME             switch theme: re-render configs, reload apps, change wallpaper
+    theme apply [--render-only]  re-render the current theme + font (after editing a template);
+                               --render-only leaves the running apps alone
+    theme font                 show the current font
+    theme font list [--json]   monospace Nerd Fonts you can pick
+    theme font set FAMILY      switch the font of terminal, bar, cards, dock, lock screen
+
+Pickers: SUPER + CTRL + T (themes) and SUPER + CTRL + F (fonts), in quickshell/cards.
+
+How it works
+  ~/.config/theme/themes/<name>/colors.toml   palette (Omarchy's format + title, accent2)
+  ~/.config/theme/themes/<name>/backgrounds/  wallpapers that come with the theme
+  ~/.config/theme/templates/<file>.tpl        one template per app
+  ~/.local/state/theme/<file>                 rendered output; apps include these files
+  ~/.config/theme/hooks/*                     run after rendering (GTK, KDE colours)
+Template syntax: {{ token }} -> #rrggbb, {{ token | hex }} -> rrggbb,
+{{ token | rgb }} -> r,g,b, {{ token | rgba:0.5 }}, {{ token | hexa:0.5 }} (#rrggbbAA),
+{{ token | argb:0.5 }} (#AArrggbb, QML), {{ token | hypr:0.5 }} (rgba(rrggbbAA)),
+{{ token | json }}. Strings: font, name, title, mode, home, state.
+"""
+
+import fcntl
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import tomllib
+
+sys.dont_write_bytecode = True
+
+HOME = os.path.expanduser("~")
+CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME") or f"{HOME}/.config"
+STATE_HOME = os.environ.get("XDG_STATE_HOME") or f"{HOME}/.local/state"
+
+CONF = os.path.join(CONFIG_HOME, "theme")
+THEMES = os.path.join(CONF, "themes")
+TEMPLATES = os.path.join(CONF, "templates")
+HOOKS = os.path.join(CONF, "hooks")
+STATE = os.path.join(STATE_HOME, "theme")
+BACKGROUNDS_STATE = os.path.join(STATE, "backgrounds.json")
+WALLPAPER_STATE = os.path.join(STATE_HOME, "wallpaper")  # written by wallctl.py
+WALLCTL = os.path.join(CONFIG_HOME, "quickshell/wallpicker/wallctl.py")
+FONTCONF = os.path.join(CONFIG_HOME, "fontconfig/conf.d/60-theme-monospace.conf")
+
+DEFAULT_THEME = "tokyo-night"
+DEFAULT_FONTS = ("JetBrainsMono Nerd Font", "CaskaydiaCove Nerd Font")
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+# Omarchy's colors.toml keys. A theme missing one gets a sensible stand-in.
+PALETTE = (
+    "accent", "selection", "muted",
+    "background", "dark_background", "darker_background", "lighter_background",
+    "foreground", "dark_foreground", "light_foreground", "bright_foreground",
+    "red", "yellow", "orange", "green", "cyan", "blue", "magenta", "brown",
+    "bright_red", "bright_yellow", "bright_green", "bright_cyan", "bright_blue", "bright_magenta",
+)
+
+
+class ThemeError(Exception):
+    pass
+
+
+# ── colours ─────────────────────────────────────────────────────────────
+
+def rgb_of(color):
+    c = color.strip().lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    if not re.fullmatch(r"[0-9a-fA-F]{6}([0-9a-fA-F]{2})?", c):
+        raise ThemeError(f"not a colour: {color!r}")
+    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def hex_of(rgb):
+    return "#" + "".join(f"{max(0, min(255, round(v))):02x}" for v in rgb)
+
+
+def norm(color):
+    return hex_of(rgb_of(color))
+
+
+def mix(a, b, t):
+    """t of a, the rest b."""
+    ra, rb = rgb_of(a), rgb_of(b)
+    return hex_of(tuple(x * t + y * (1 - t) for x, y in zip(ra, rb)))
+
+
+def luminance(color):
+    def channel(v):
+        v /= 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = (channel(v) for v in rgb_of(color))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a, b):
+    la, lb = sorted((luminance(a), luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+# ── themes ──────────────────────────────────────────────────────────────
+
+def theme_names():
+    try:
+        names = os.listdir(THEMES)
+    except OSError:
+        return []
+    return sorted(n for n in names if os.path.isfile(os.path.join(THEMES, n, "colors.toml")))
+
+
+def load_theme(name):
+    path = os.path.join(THEMES, name, "colors.toml")
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except FileNotFoundError:
+        raise ThemeError(f"no theme named {name!r} (see: theme list)")
+    except tomllib.TOMLDecodeError as e:
+        raise ThemeError(f"{path}: {e}")
+    if "background" not in data or "foreground" not in data:
+        raise ThemeError(f"{path}: needs at least background and foreground")
+    title = data.get("title") or name.replace("-", " ").title()
+    mode = data.get("mode", "dark")
+    colors = {k: norm(v) for k, v in data.items() if isinstance(v, str) and k in PALETTE + ("accent2",)}
+    return {"name": name, "title": title, "mode": mode, "colors": colors}
+
+
+def palette(theme):
+    """The theme's colours plus the derived ones every template can use."""
+    c = dict(theme["colors"])
+    bg, fg = c["background"], c["foreground"]
+    dark = theme["mode"] != "light"
+    shade = "#000000" if dark else "#ffffff"
+    c.setdefault("dark_background", mix(bg, shade, 0.75))
+    c.setdefault("darker_background", mix(bg, shade, 0.55))
+    c.setdefault("lighter_background", mix(fg, bg, 0.08))
+    c.setdefault("bright_foreground", fg)
+    c.setdefault("light_foreground", mix(fg, bg, 0.85))
+    c.setdefault("dark_foreground", mix(fg, bg, 0.40))
+    c.setdefault("selection", mix(fg, bg, 0.15))
+    c.setdefault("muted", mix(fg, bg, 0.25))
+    c.setdefault("accent", c.get("blue", fg))
+    for base in ("red", "yellow", "orange", "green", "cyan", "blue", "magenta"):
+        c.setdefault(base, c["accent"])
+    c.setdefault("brown", mix(c["orange"], bg, 0.5))
+    for base in ("red", "yellow", "green", "cyan", "blue", "magenta"):
+        c.setdefault(f"bright_{base}", c[base])
+    c.setdefault("accent2", c.get("bright_magenta") or c["accent"])
+    # Text on top of the panels: secondary and tertiary.
+    c["text_muted"] = mix(fg, bg, 0.62)
+    c["text_faint"] = mix(fg, bg, 0.36)
+    # Text drawn on an accent fill (the active workspace pill, selected rows).
+    c["on_accent"] = max((c["darker_background"], c["bright_foreground"]),
+                         key=lambda x: contrast(x, c["accent"]))
+    return c
+
+
+def tokens(theme, font):
+    t = palette(theme)
+    t.update(font=font, name=theme["name"], title=theme["title"], mode=theme["mode"],
+             home=HOME, state=STATE)
+    return t
+
+
+# ── templates ───────────────────────────────────────────────────────────
+
+def _alpha(a):
+    return f"{round(float(a if a not in (None, '') else 1) * 255):02x}"
+
+
+FILTERS = {
+    "hex": lambda v, a: v[1:],
+    "rgb": lambda v, a: ",".join(str(x) for x in rgb_of(v)),
+    "rgba": lambda v, a: "rgba({},{},{},{})".format(*rgb_of(v), a if a else 1),
+    "hexa": lambda v, a: v + _alpha(a),
+    "argb": lambda v, a: "#" + _alpha(a) + v[1:],
+    "hypr": lambda v, a: f"rgba({v[1:]}{_alpha(a)})",
+    "json": lambda v, a: json.dumps(v),
+}
+TOKEN = re.compile(r"\{\{\s*([a-z0-9_]+)\s*(?:\|\s*([a-z]+)\s*(?::\s*([0-9.]+))?\s*)?\}\}")
+
+
+def render(text, toks, where):
+    def sub(m):
+        key, flt, arg = m.groups()
+        if key not in toks:
+            raise ThemeError(f"{where}: unknown token {{{{ {key} }}}}")
+        value = toks[key]
+        if flt is None:
+            return value
+        if flt not in FILTERS:
+            raise ThemeError(f"{where}: unknown filter | {flt}")
+        if flt != "json" and not value.startswith("#"):
+            raise ThemeError(f"{where}: | {flt} needs a colour, {key} is not one")
+        return FILTERS[flt](value, arg)
+    return TOKEN.sub(sub, text)
+
+
+def write_atomic(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def render_all(theme, font):
+    toks = tokens(theme, font)
+    out = {}
+    try:
+        names = sorted(n for n in os.listdir(TEMPLATES) if n.endswith(".tpl"))
+    except OSError:
+        names = []
+    for name in names:
+        with open(os.path.join(TEMPLATES, name)) as f:
+            out[name[:-4]] = render(f.read(), toks, name)
+    colors = {k: v for k, v in toks.items() if isinstance(v, str) and v.startswith("#")}
+    out["theme.json"] = json.dumps({"name": theme["name"], "title": theme["title"],
+                                    "mode": theme["mode"], "font": font, "colors": colors},
+                                   indent=1) + "\n"
+    # Every template rendered fine: only now replace the live files.
+    for name, text in out.items():
+        write_atomic(os.path.join(STATE, name), text)
+    write_atomic(os.path.join(STATE, "name"), theme["name"] + "\n")
+    write_atomic(os.path.join(STATE, "font"), font + "\n")
+
+
+# ── fonts ───────────────────────────────────────────────────────────────
+
+def font_families():
+    """Monospace Nerd Fonts, one entry per family (not the Mono/Propo/NL twins)."""
+    r = subprocess.run(["fc-list", ":spacing=100", "-f", "%{family[0]}\n"],
+                       capture_output=True, text=True)
+    names = set()
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if line.endswith(" Nerd Font") and not line.endswith("NL Nerd Font"):
+            names.add(line)
+    return sorted(names, key=str.lower)
+
+
+def read_line(path):
+    try:
+        with open(path) as f:
+            return f.readline().strip()
+    except OSError:
+        return ""
+
+
+def current_font(families=None):
+    font = read_line(os.path.join(STATE, "font"))
+    if font:
+        return font
+    families = families if families is not None else font_families()
+    for f in DEFAULT_FONTS:
+        if f in families:
+            return f
+    return families[0] if families else "monospace"
+
+
+def current_theme():
+    name = read_line(os.path.join(STATE, "name"))
+    return name if name in theme_names() else DEFAULT_THEME
+
+
+def write_fontconfig(font):
+    # "monospace" resolves to the picked font for every app that asks for it.
+    write_atomic(FONTCONF, f"""<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<!-- Written by ~/.local/bin/theme (theme font set). -->
+<fontconfig>
+  <match target="pattern">
+    <test name="family" qual="any"><string>monospace</string></test>
+    <edit name="family" mode="prepend_first" binding="strong"><string>{font}</string></edit>
+  </match>
+</fontconfig>
+""")
+
+
+# ── wallpapers ──────────────────────────────────────────────────────────
+
+def backgrounds(name):
+    d = os.path.join(THEMES, name, "backgrounds")
+    try:
+        files = sorted(os.listdir(d), key=str.lower)
+    except OSError:
+        return []
+    return [os.path.join(d, f) for f in files if f.lower().endswith(IMAGE_EXTS)]
+
+
+def load_json(path, default):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def switch_wallpaper(old, new):
+    """Each theme remembers the wallpaper it had; a new one starts on its first."""
+    remembered = load_json(BACKGROUNDS_STATE, {})
+    now = read_line(WALLPAPER_STATE)
+    if old and now:
+        remembered[old] = now
+    target = remembered.get(new)
+    if not target or not os.path.isfile(target):
+        options = backgrounds(new)
+        target = options[0] if options else ""
+    write_atomic(BACKGROUNDS_STATE, json.dumps(remembered, indent=1) + "\n")
+    if target and target != now and os.path.isfile(WALLCTL):
+        run([WALLCTL, "set", target], timeout=15)
+
+
+# ── reloading the running apps ──────────────────────────────────────────
+
+def run(args, timeout=5, env=None):
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"theme: {args[0]}: {e}", file=sys.stderr)
+        return None
+
+
+def running(name):
+    return subprocess.run(["pgrep", "-x", name], capture_output=True).returncode == 0
+
+
+def reload_apps(theme, font, reason):
+    if running("kitty"):
+        run(["pkill", "-USR1", "-x", "kitty"])          # kitty re-reads kitty.conf
+    if running("waybar"):
+        run(["pkill", "-USR2", "-x", "waybar"])         # waybar reloads config + style
+    if running("swaync") and shutil.which("swaync-client"):
+        run(["swaync-client", "--reload-css"])
+    if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") and shutil.which("hyprctl"):
+        lua = os.path.join(STATE, "hyprland.lua")
+        plugins = run(["hyprctl", "plugin", "list", "-j"])
+        if plugins and '"hyprbars"' in plugins.stdout:
+            # Floating titlebars are in: their buttons only take new colours
+            # when the config loads, so reload it (look.lua runs the new file).
+            run(["hyprctl", "reload"])
+        elif os.path.isfile(lua):
+            run(["hyprctl", "eval", f"dofile({json.dumps(lua)})"])  # borders, groups
+    # Quickshell (cards, dock, pickers) watches theme.json by itself.
+    env = dict(os.environ, THEME_STATE=STATE, THEME_NAME=theme["name"], THEME_TITLE=theme["title"],
+               THEME_MODE=theme["mode"], THEME_FONT=font, THEME_REASON=reason)
+    try:
+        hooks = sorted(os.listdir(HOOKS))
+    except OSError:
+        hooks = []
+    for hook in hooks:
+        path = os.path.join(HOOKS, hook)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            r = run([path], env=env)
+            if r and r.returncode != 0:
+                print(f"theme: hook {hook} failed: {r.stderr.strip()}", file=sys.stderr)
+
+
+# ── commands ────────────────────────────────────────────────────────────
+
+class Lock:
+    """One switch at a time: pickers can fire faster than apps reload."""
+
+    def __enter__(self):
+        os.makedirs(STATE, exist_ok=True)
+        self.f = open(os.path.join(STATE, ".lock"), "w")
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.f, fcntl.LOCK_UN)
+        self.f.close()
+
+
+def cmd_set(name):
+    with Lock():
+        theme = load_theme(name)
+        old = read_line(os.path.join(STATE, "name"))
+        font = current_font()
+        render_all(theme, font)
+        write_fontconfig(font)
+        reload_apps(theme, font, "theme")
+        if old != name:
+            switch_wallpaper(old, name)
+    print(f"{theme['title']} · {font}")
+
+
+def cmd_apply(quiet=False, render_only=False):
+    """--render-only writes the files without touching running apps (install.sh, tests)."""
+    with Lock():
+        theme = load_theme(current_theme())
+        font = current_font()
+        render_all(theme, font)
+        if not render_only:
+            write_fontconfig(font)
+            reload_apps(theme, font, "apply")
+    if not quiet:
+        print(f"{theme['title']} · {font}")
+
+
+def cmd_font_set(family):
+    families = font_families()
+    match = next((f for f in families if f.lower() == family.lower()), None)
+    if not match:
+        raise ThemeError(f"no Nerd Font family named {family!r} (see: theme font list)")
+    with Lock():
+        theme = load_theme(current_theme())
+        render_all(theme, match)
+        write_fontconfig(match)
+        reload_apps(theme, match, "font")
+    print(match)
+
+
+def cmd_list(as_json):
+    current = current_theme()
+    if not as_json:
+        for n in theme_names():
+            print(("* " if n == current else "  ") + n)
+        return
+    items = []
+    for n in theme_names():
+        try:
+            t = load_theme(n)
+        except ThemeError as e:
+            print(f"theme: {e}", file=sys.stderr)
+            continue
+        p = palette(t)
+        preview = os.path.join(THEMES, n, "preview.jpg")
+        items.append({
+            "name": n, "title": t["title"], "mode": t["mode"],
+            "preview": preview if os.path.isfile(preview) else "",
+            "backgrounds": len(backgrounds(n)),
+            "colors": {k: p[k] for k in ("background", "foreground", "accent", "accent2", "red",
+                                          "yellow", "green", "blue", "magenta", "cyan")},
+        })
+    print(json.dumps({"current": current, "font": current_font(), "themes": items}))
+
+
+def cmd_font_list(as_json):
+    families = font_families()
+    current = current_font(families)
+    if as_json:
+        print(json.dumps({"current": current, "fonts": families}))
+    else:
+        for f in families:
+            print(("* " if f == current else "  ") + f)
+
+
+def main(argv):
+    if not argv:
+        print(f"{load_theme(current_theme())['title']} · {current_font()}")
+        return
+    cmd, rest = argv[0], argv[1:]
+    as_json = "--json" in rest
+    rest = [a for a in rest if a != "--json"]
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__.strip())
+    elif cmd == "list":
+        cmd_list(as_json)
+    elif cmd == "current":
+        print(current_theme())
+    elif cmd == "set" and len(rest) == 1:
+        cmd_set(rest[0])
+    elif cmd == "apply":
+        cmd_apply(quiet="--quiet" in rest, render_only="--render-only" in rest)
+    elif cmd == "font":
+        sub = rest[0] if rest else "current"
+        if sub == "current":
+            print(current_font())
+        elif sub == "list":
+            cmd_font_list(as_json)
+        elif sub == "set" and len(rest) == 2:
+            cmd_font_set(rest[1])
+        else:
+            raise ThemeError("usage: theme font [current | list [--json] | set FAMILY]")
+    else:
+        raise ThemeError("usage: theme [list | current | set NAME | apply | font ...]  (theme --help)")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except ThemeError as e:
+        print(f"theme: {e}", file=sys.stderr)
+        sys.exit(1)

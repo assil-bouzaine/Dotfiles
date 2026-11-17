@@ -13,21 +13,34 @@ local cards = "pkill -x rofi || "
 
 hl.bind(mainMod .. " + W",      hl.dsp.exec_cmd("brave"), { description = "Open Brave browser" })
 hl.bind(mainMod .. " + RETURN", hl.dsp.exec_cmd(terminal), { description = "Open terminal (kitty)" })
-hl.bind(mainMod .. " + C",      hl.dsp.window.close(), { description = "Close the active window" })
+hl.bind(mainMod .. " + Q",      hl.dsp.window.close(), { description = "Close the active window" })
 hl.bind(mainMod .. " + M",      hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"), { description = "Log out (exit Hyprland)" })
 hl.bind(mainMod .. " + F",      hl.dsp.exec_cmd(fileManager), { description = "Open file manager (Dolphin)" })
-hl.bind(mainMod .. " + V",      hl.dsp.window.float({ action = "toggle" }), { description = "Toggle floating for the active window" })
+hl.bind(mainMod .. " + SHIFT + V", hl.dsp.window.float({ action = "toggle" }), { description = "Toggle floating for the active window" })
 hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd(cards .. "rofi -show drun -theme ~/.config/waybar/scripts/launcher.rasi"), { description = "Open app launcher" })
-hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/wifi.py"), { description = "Open Wi-Fi / network menu" })
-hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd(cards .. "~/.config/waybar/scripts/bluetooth.py"), { description = "Open Bluetooth menu" })
-hl.bind(mainMod .. " + T",      hl.dsp.exec_cmd("~/.config/waybar/scripts/tasks.py"), { description = "Open / close task manager (memory and CPU per app)" })
+hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd("~/.config/quickshell/cards/card netcard"), { description = "Open / close the network card" })
+hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd("~/.config/quickshell/cards/card bluetooth"), { description = "Open / close the Bluetooth card" })
+hl.bind(mainMod .. " + SHIFT + SPACE", hl.dsp.exec_cmd("~/.config/waybar/scripts/bar-toggle.sh"), { description = "Show / hide the top bar" })
+hl.bind(mainMod .. " + CTRL + A", hl.dsp.exec_cmd("~/.config/quickshell/cards/card agents"), { description = "Open / close the agents card (limits, usage, start an agent)" })
+hl.bind(mainMod .. " + CTRL + I", hl.dsp.exec_cmd("~/.config/waybar/scripts/awake.sh toggle"), { description = "Stay awake on / off (no lock, screen off or sleep)" })
+hl.bind(mainMod .. " + CTRL + SPACE", hl.dsp.exec_cmd("~/.config/quickshell/wallpicker/wallpicker"), { description = "Pick a wallpaper" })
+hl.bind(mainMod .. " + T",      hl.dsp.exec_cmd("~/.config/hypr/scripts/tasks"), { description = "Task manager (btop): open, focus, or close" })
 hl.bind(mainMod .. " + P",      hl.dsp.window.pseudo(), { description = "Toggle pseudo-tiling for the active window" }) -- dwindle
+
+-- Omarchy 4.5-style layouts, dock and pickers (on SUPER + ALT / SUPER + CTRL so
+-- none of the keys above change). Floating workspaces: conf.d/workspace-modes.lua.
+-- Dock, app grid and pickers: ~/.config/quickshell/cards. Themes: ~/.local/bin/theme.
+hl.bind(mainMod .. " + ALT + L",     hl.dsp.exec_cmd("~/.config/hypr/scripts/layout-toggle"), { description = "Switch this workspace between tiling and floating (dock + titlebars)" })
+hl.bind(mainMod .. " + ALT + M",     hl.dsp.exec_cmd("~/.config/hypr/scripts/window-minimize"), { description = "Minimize the window to the dock (floating workspaces)" })
+hl.bind(mainMod .. " + ALT + SPACE", hl.dsp.exec_cmd("~/.config/quickshell/cards/card apps"), { description = "Open / close the app grid (all apps)" })
+hl.bind(mainMod .. " + CTRL + T",    hl.dsp.exec_cmd("~/.config/quickshell/cards/card themes"), { description = "Pick a theme (colours, wallpaper, terminal, bar, apps)" })
+hl.bind(mainMod .. " + CTRL + F",    hl.dsp.exec_cmd("~/.config/quickshell/cards/card fonts"), { description = "Pick a font (terminal, bar, dock, cards, lock screen)" })
 hl.bind("SUPER + L",            hl.dsp.exec_cmd("hyprlock"), { description = "Lock the screen" })
 
--- Keybind cheat sheet: searchable list of every bind in this config.
--- SUPER + /. code:61 is the physical slash key, so it stays put on the ara
--- and fr layouts where "/" lives on another key.
-hl.bind(mainMod .. " + code:61", hl.dsp.exec_cmd("~/.config/hypr/scripts/keybinds.sh"), { description = "Show this keybind cheat sheet" })
+-- Keybinds card (SUPER + K, like Omarchy): every bind in this config, search
+-- as you type, Enter runs the one you pick. quickshell/cards/KeysCard.qml reads
+-- them from scripts/keybinds.lua, so there's nothing to keep in sync.
+hl.bind(mainMod .. " + K", hl.dsp.exec_cmd("~/.config/quickshell/cards/card keys"), { description = "Show every keybind (search, Enter runs it)" })
 
 -- Hex dictation (Anomaly). Hyprland's GlobalShortcuts portal never assigns
 -- keys to app shortcuts, so Hex reports "desktop did not grant this shortcut".
@@ -62,10 +75,10 @@ hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }), { descript
 hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }), { description = "Move focus up" })
 hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }), { description = "Move focus down" })
 
--- Move focus with mainMod + hjkl (note: `semicolon` is used for right, kept as-is)
+-- Move focus with mainMod + h j ; (semicolon is right). Up is only SUPER + up:
+-- SUPER + K opens the keybinds card.
 hl.bind(mainMod .. " + h",         hl.dsp.focus({ direction = "left" }), { description = "Move focus left" })
 hl.bind(mainMod .. " + semicolon", hl.dsp.focus({ direction = "right" }), { description = "Move focus right" })
-hl.bind(mainMod .. " + k", hl.dsp.focus({ direction = "up" }), { description = "Move focus up" })
 hl.bind(mainMod .. " + j", hl.dsp.focus({ direction = "down" }), { description = "Move focus down" })
 
 -- Switch workspaces with mainMod + [0-9] (10 is on key 0)
@@ -118,3 +131,33 @@ hl.bind("XF86AudioNext",  hl.dsp.exec_cmd("playerctl next"),       { locked = tr
 hl.bind("XF86AudioPause", hl.dsp.exec_cmd("playerctl play-pause"), { locked = true, description = "Play / pause" })
 hl.bind("XF86AudioPlay",  hl.dsp.exec_cmd("playerctl play-pause"), { locked = true, description = "Play / pause" })
 hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd("playerctl previous"),   { locked = true, description = "Previous track" })
+
+-- Universal copy / paste / cut / select all (as in Omarchy 4.5): SUPER + C/V/X/A
+-- send CTRL + C/V/X/A to the focused window, or CTRL + SHIFT + C/V in a
+-- terminal. Keys go down and up as two steps because send_shortcut can leave a
+-- synthetic key stuck; wtype won't do (the held SUPER merges into its chord).
+-- Close window moved to SUPER + Q and floating to SUPER + SHIFT + V for this.
+local terminals = { kitty = true, Alacritty = true, foot = true, ["com.mitchellh.ghostty"] = true, wezterm = true }
+
+local function send_once(mods, key)
+    hl.dispatch(hl.dsp.send_key_state({ mods = mods, key = key, state = "down" }))
+    hl.timer(function()
+        hl.dispatch(hl.dsp.send_key_state({ mods = mods, key = key, state = "up" }))
+    end, { timeout = 50, type = "oneshot" })
+end
+
+local function clipboard_key(key, terminal_too)
+    return function()
+        local win = hl.get_active_window()
+        if terminal_too and win and terminals[win.class] then
+            send_once("CTRL SHIFT", key)
+        else
+            send_once("CTRL", key)
+        end
+    end
+end
+
+hl.bind(mainMod .. " + C", clipboard_key("C", true),  { description = "Copy (any app, terminals too)" })
+hl.bind(mainMod .. " + V", clipboard_key("V", true),  { description = "Paste (any app, terminals too)" })
+hl.bind(mainMod .. " + X", clipboard_key("X", false), { description = "Cut" })
+hl.bind(mainMod .. " + A", clipboard_key("A", false), { description = "Select all" })

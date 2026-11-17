@@ -1,29 +1,15 @@
+@import url("../../.local/state/theme/swaync.css");
+
 /* swaync: small, quiet toasts in the same style as the waybar pills and the
  * rofi cards (waybar/.config/waybar/scripts/card.rasi). Loaded on top of
  * /etc/xdg/swaync/style.css, so only the differences live here. */
 
 :root {
-  --cc-bg: rgba(16, 18, 22, 0.98);
-  --noti-border-color: rgba(255, 255, 255, 0.11);
-  --noti-bg: 16, 18, 22;
-  --noti-bg-alpha: 0.98;
-  --noti-bg-darker: rgba(255, 255, 255, 0.06);
-  --noti-bg-hover: rgba(255, 255, 255, 0.09);
-  --noti-bg-focus: transparent;
-  --noti-close-bg: rgba(255, 255, 255, 0.06);
-  --noti-close-bg-hover: rgba(255, 255, 255, 0.14);
-  --text-color: #eceef2;
-  --text-color-disabled: #9299a6;
-  --bg-selected: #33ccff;
   --notification-icon-size: 34px;
   --border-radius: 14px;
   --notification-shadow: none;
   --font-size-body: 12px;
   --font-size-summary: 13px;
-}
-
-* {
-  font-family: "Adwaita Sans", "Noto Sans", "CaskaydiaCove Nerd Font Propo", sans-serif;
 }
 
 /* ── Popup toasts ───────────────────────────────────────────────────── */
@@ -67,7 +53,7 @@
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content .text-box .body {
-  color: #9299a6;
+  color: var(--muted);
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content progressbar {
@@ -76,7 +62,7 @@
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content progressbar progress {
-  background: linear-gradient(90deg, #33ccff, #00ff99);
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
   border-radius: 4px;
 }
 
@@ -108,7 +94,7 @@
 
 /* Critical: a red accent instead of a louder box */
 .notification-row .notification-background .notification.critical {
-  border-color: rgba(247, 17, 24, 0.5);
+  border-color: alpha(var(--red), 0.5);
 }
 
 /* ── Control center (bell click) ────────────────────────────────────── */
@@ -147,11 +133,11 @@
   border: none;
 }
 .widget-dnd > switch:checked {
-  background: linear-gradient(45deg, #33ccff, #00ff99);
+  background: linear-gradient(45deg, var(--accent), var(--accent2));
 }
 .widget-dnd > switch slider {
   border-radius: 8px;
-  background: #eceef2;
+  background: var(--text-color);
 }
 
 .control-center .control-center-list .notification {

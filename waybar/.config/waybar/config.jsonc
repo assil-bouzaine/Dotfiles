@@ -10,21 +10,19 @@
     "margin-right": 6,
     "spacing": 0,       // style.css joins the modules into three islands
 
-    // Auto-hide: scripts/autohide.py shows the bar while the cursor is at the
-    // top edge. Shown, it reserves its space and windows shrink to make room;
-    // hidden, the space is given back.
-    "start_hidden": true,
+    // Always shown. SUPER + SHIFT + SPACE hides / shows it (scripts/bar-toggle.sh);
+    // hidden, its space is given back to the windows.
 
     "modules-left": [
-        "custom/autohide",
         "custom/launcher",
         "group/workspaces",
         "group/ws-apps"
     ],
-    "modules-center": ["clock"],
+    "modules-center": ["group/center"],
     "modules-right": [
         "group/stats",
         "network",
+        "bluetooth",
         "group/apps",
         "custom/notification"
     ],
@@ -51,17 +49,15 @@
     },
     "group/apps": {
         "orientation": "horizontal",
-        "modules": ["custom/nightlight", "bluetooth", "tray"]
+        "modules": ["custom/agents", "custom/power", "tray"]
+    },
+    // Indicators left of the clock, as in Omarchy: night light, stay awake.
+    "group/center": {
+        "orientation": "horizontal",
+        "modules": ["custom/nightlight", "custom/awake", "clock"]
     },
 
     // ── Left ─────────────────────────────────────────────────────────────
-
-    // autohide prints nothing (so it's hidden); it only keeps the daemon alive.
-    "custom/autohide": {
-        "exec": "~/.config/waybar/scripts/autohide.py",
-        "restart-interval": 2,
-        "tooltip": false
-    },
 
     "custom/launcher": {
         "format": "",
@@ -197,15 +193,15 @@
     // ── Center ───────────────────────────────────────────────────────────
 
     "clock": {
-        "format": "{:%H:%M<span color='#9299a6' weight='500'>   %a %d %b</span>}",
+        "format": "{:%H:%M<span alpha='62%%' weight='500'>   %a %d %b</span>}",   // %% : a lone % is a date code here
         "tooltip-format": "<tt>{calendar}</tt>",
         "calendar": {
             "mode": "month",
             "on-scroll": 1,
             "format": {
-                "months":   "<span color='#33ccff'><b>{}</b></span>",
-                "weekdays": "<span color='#5c6370'><b>{}</b></span>",
-                "today":    "<span color='#00ff99'><b><u>{}</u></b></span>"
+                "months":   "<b>{}</b>",
+                "weekdays": "<span alpha='55%'><b>{}</b></span>",
+                "today":    "<b><u>{}</u></b>"
             }
         },
         "actions": {
@@ -221,21 +217,21 @@
     // scripts/gen-meters.py).
     "cpu": {
         "interval": 2,
-        "format": "<span color='#9299a6'>cpu</span> {usage}%",
+        "format": "<span alpha='62%'>cpu</span> {usage}%",
         "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
-        "on-click": "~/.config/waybar/scripts/tasks.py"
+        "on-click": "~/.config/hypr/scripts/tasks"
     },
     "memory": {
         "interval": 3,
-        "format": "<span color='#9299a6'>ram</span> {percentage}%",
+        "format": "<span alpha='62%'>ram</span> {percentage}%",
         "tooltip-format": "RAM {used:0.1f} / {total:0.1f} GiB\nSwap {swapUsed:0.1f} / {swapTotal:0.1f} GiB",
         "states": { "p0": 0, "p5": 5, "p10": 10, "p15": 15, "p20": 20, "p25": 25, "p30": 30, "p35": 35, "p40": 40, "p45": 45, "p50": 50, "p55": 55, "p60": 60, "p65": 65, "p70": 70, "p75": 75, "p80": 80, "p85": 85, "p90": 90, "p95": 95, "p100": 100 },
-        "on-click": "~/.config/waybar/scripts/tasks.py"
+        "on-click": "~/.config/hypr/scripts/tasks"
     },
     "network#speed": {
         "interval": 1,
-        "format": "<span color='#9299a6'>󰇚</span> {bandwidthDownBytes}",
-        "format-disconnected": "<span color='#9299a6'>󰇚</span> --",
+        "format": "<span alpha='62%'>󰇚</span> {bandwidthDownBytes}",
+        "format-disconnected": "<span alpha='62%'>󰇚</span> --",
         "tooltip-format": "↓ {bandwidthDownBytes}   ↑ {bandwidthUpBytes}"
     },
 
@@ -248,23 +244,24 @@
         "format-disabled": "󰖪  Off",
         "format-icons": ["󰤟", "󰤢", "󰤥", "󰤨"],
         "interface": "wlan0",
-        "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr} on {ifname}\nClick: pick network · Right-click: settings",
+        "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr} on {ifname}\nClick: network card · Right-click: settings",
         "tooltip-format-ethernet": "{ipaddr} on {ifname}",
-        "tooltip-format-disconnected": "Click: pick network",
-        "on-click": "pkill -x rofi || ~/.config/waybar/scripts/wifi.py",
+        "tooltip-format-disconnected": "Click: network card",
+        "on-click": "~/.config/quickshell/cards/card netcard",
         "on-click-right": "nm-connection-editor"
     },
     "bluetooth": {
         "format": "󰂯",
         "format-off": "󰂲",
         "format-disabled": "󰂲",
-        "format-connected": "󰂱  {device_alias}",
-        "format-connected-battery": "󰂱  {device_alias} {device_battery_percentage}%",
-        "tooltip-format": "{controller_alias}: {status}\nClick: devices · Right-click: power on/off",
-        "tooltip-format-connected": "{device_enumerate}\nClick: devices · Right-click: power on/off",
+        "format-connected": "󰂱",
+        "format-connected-battery": "󰂱",
+        "tooltip-format": "Bluetooth: {status}\nClick: Bluetooth card · Right-click: on / off",
+        "tooltip-format-connected": "{device_enumerate}\nClick: Bluetooth card · Right-click: on / off",
         "tooltip-format-enumerate-connected": "{device_alias}",
-        "on-click": "pkill -x rofi || ~/.config/waybar/scripts/bluetooth.py",
-        "on-click-right": "bluetoothctl show | grep -q 'Powered: yes' && bluetoothctl power off || { rfkill unblock bluetooth; sleep 1; bluetoothctl power on; }"
+        "tooltip-format-enumerate-connected-battery": "{device_alias}  {device_battery_percentage}%",
+        "on-click": "~/.config/quickshell/cards/card bluetooth",
+        "on-click-right": "~/.config/quickshell/cards/btctl.sh power toggle"
     },
 
     // Night light (hyprsunset), see scripts/nightlight.sh
@@ -278,6 +275,34 @@
         "on-scroll-down": "~/.config/waybar/scripts/nightlight.sh cooler"
     },
 
+    // AI agents (Omarchy's robot): limits + usage card, see quickshell/cards/AgentsCard.qml
+    "custom/agents": {
+        "exec": "~/.config/quickshell/cards/agentsctl.py bar",
+        "return-type": "json",
+        "signal": 12,
+        "interval": 300,
+        "on-click": "~/.config/quickshell/cards/card agents",
+        "on-click-right": "~/.config/quickshell/cards/agentsctl.py launch claude"
+    },
+
+    // Stay awake: no lock / screen off / sleep while on (SUPER + CTRL + I), see scripts/awake.sh
+    "custom/awake": {
+        "exec": "~/.config/waybar/scripts/awake.sh",
+        "return-type": "json",
+        "signal": 11,
+        "interval": 60,
+        "on-click": "~/.config/waybar/scripts/awake.sh toggle"
+    },
+
+    // Power profile: balanced (quieter fan) <-> performance, see scripts/power.sh
+    "custom/power": {
+        "exec": "~/.config/waybar/scripts/power.sh",
+        "return-type": "json",
+        "signal": 10,
+        "interval": 30,
+        "on-click": "~/.config/waybar/scripts/power.sh toggle"
+    },
+
     "tray": {
         "icon-size": 15,
         "spacing": 10
@@ -288,13 +313,13 @@
         "return-type": "json",
         "format": "{icon}",
         "format-icons": {
-            "notification": "󰂚<span foreground='#00ff99'><sup></sup></span>",
+            "notification": "󰂚<sup></sup>",
             "none": "󰂜",
-            "dnd-notification": "󰂛<span foreground='#00ff99'><sup></sup></span>",
+            "dnd-notification": "󰂛<sup></sup>",
             "dnd-none": "󰂛",
-            "inhibited-notification": "󰂚<span foreground='#00ff99'><sup></sup></span>",
+            "inhibited-notification": "󰂚<sup></sup>",
             "inhibited-none": "󰂜",
-            "dnd-inhibited-notification": "󰂛<span foreground='#00ff99'><sup></sup></span>",
+            "dnd-inhibited-notification": "󰂛<sup></sup>",
             "dnd-inhibited-none": "󰂛"
         },
         "tooltip": false,

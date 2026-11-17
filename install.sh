@@ -12,20 +12,25 @@
 set -euo pipefail
 
 REPO=https://github.com/assil-bouzaine/Dotfiles.git
-PACKAGES=(hypr waybar swaync kitty tmux vim zsh agent-notify)
+PACKAGES=(hypr waybar swaync kitty tmux vim zsh agent-notify quickshell share-picker theme titlebars btop)
 
 PACMAN_PKGS=(
-    git base-devel stow zsh tmux vim curl fzf fd lua
+    git base-devel stow zsh tmux vim curl fzf fd lua jq cmake
     hyprland hypridle hyprlock awww
     xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
     kitty dolphin gwenview archlinux-xdg-menu plasma-integration polkit-kde-agent rofi gnome-keyring
     pipewire pipewire-pulse wireplumber brightnessctl playerctl
     wl-clipboard wtype grim slurp zsh-syntax-highlighting
     waybar networkmanager nm-connection-editor bluez bluez-utils blueman
-    swaync libnotify htop python python-gobject hyprsunset sound-theme-freedesktop
-    ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd adwaita-fonts
+    quickshell qrencode
+    swaync libnotify htop btop python python-gobject hyprsunset sound-theme-freedesktop
+    ttf-jetbrains-mono-nerd ttf-cascadia-code-nerd
+    ttf-firacode-nerd otf-geist-mono-nerd ttf-victor-mono-nerd
+    otf-commit-mono-nerd ttf-martian-mono-nerd ttf-0xproto-nerd
+    ttf-lilex-nerd ttf-hack-nerd ttf-ibmplex-mono-nerd ttf-adwaitamono-nerd
+    adwaita-fonts adw-gtk-theme
 )
-AUR_PKGS=(brave-bin hex-bin xwaylandvideobridge)
+AUR_PKGS=(brave-bin hex-bin hyprland-preview-share-picker-git)
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -51,6 +56,8 @@ main() {
     aur
     zsh_setup
     stow_all
+    theme_setup
+    titlebars_setup
     wallpapers
     finish
 }
@@ -121,6 +128,8 @@ stow_all() {
     for pkg in "${PACKAGES[@]}"; do
         while IFS= read -r -d '' src; do
             rel=${src#"$DOTFILES/$pkg/"}
+            # titlebars' notes and system hook are ignored by stow.
+            [[ $pkg == titlebars && $rel != .local/* ]] && continue
             dst=$HOME/$rel
             [[ -e $dst || -L $dst ]] || continue
             [[ $(realpath -m "$dst") == "$(realpath -m "$src")" ]] && continue
@@ -133,8 +142,29 @@ stow_all() {
     (( moved )) && info "old files are in $backup"
     # Shared dirs must exist first, or stow links the whole dir into the repo and
     # everything other apps put there later would land in the repo too.
-    mkdir -p "$HOME/.local/bin" "$HOME/.local/lib" "$HOME/.config/systemd/user"
+    # ~/.config/btop too: the theme hook writes btop's themes/ next to btop.conf.
+    mkdir -p "$HOME/.local/bin" "$HOME/.local/lib" "$HOME/.local/share" "$HOME/.config/systemd/user" "$HOME/.config/btop"
     stow -d "$DOTFILES" -t "$HOME" --restow "${PACKAGES[@]}"
+}
+
+theme_setup() {
+    step "Theme"
+    # Workspace modes need no setup: Hyprland writes the boot defaults
+    # (workspace 1 floating) to $XDG_RUNTIME_DIR on its first config load.
+    # Renders every app's colours and runs the hooks (GTK, KDE, btop). Nothing
+    # graphical runs yet, so there is nothing to reload.
+    "$HOME/.local/bin/theme" apply || warn "theme apply failed; run it again after logging in"
+}
+
+titlebars_setup() {
+    step "Floating window titlebars"
+    if "$HOME/.local/bin/titlebars-rebuild" --check >/dev/null 2>&1; then
+        info "titlebars already match Hyprland"
+    else
+        "$HOME/.local/bin/titlebars-rebuild" || \
+            warn "couldn't build titlebars; floating workspaces still work. Re-run titlebars-rebuild later."
+    fi
+    sudo install -Dm644 "$DOTFILES/titlebars/pacman-hook/titlebars-rebuild.hook" /etc/pacman.d/hooks/titlebars-rebuild.hook
 }
 
 wallpapers() {
@@ -147,9 +177,7 @@ finish() {
     info "- Log out and back in (zsh shell, input group), then start Hyprland."
     info "- Monitors: check 'hyprctl monitors', fix conf.d/monitors.lua."
     info "- Hex: open it once (hex app) and download a model; keys are in hyprland.md."
-    if [[ $HOME != /home/mclovin ]]; then
-        warn "hyprlock.conf hard-codes /home/mclovin; fix that path for $HOME."
-    fi
+    info "- After every Hyprland upgrade: titlebars-rebuild (check with --check)."
     info "- Telegram alerts: one @BotFather bot per agent, then"
     info "  tg-notify --bot claude setup; tg-notify --bot codex setup   (agent-notify.md)"
     info "- Verify: hyprctl configerrors   (must be empty)"

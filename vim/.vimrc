@@ -86,6 +86,97 @@ nnoremap <leader>t :terminal<CR>
 
 
 " ============================================
+" MARKDOWN
+" ============================================
+" Reading .md in vim:
+"   - headings fold (za/zc/zo), the file opens with folds open
+"   - **bold**, _italic_, ~~strike~~ and `code` markers are concealed, so the
+"     text looks closer to the rendered version (insert mode shows them again)
+"   - long lines wrap at word boundaries; j/k follow the displayed lines
+"     (counts such as 5j still move by file lines)
+"   - [[ and ]] jump between headings (built into vim's markdown ftplugin)
+"   - <leader>m toggles conceal, <leader>s toggles spell check
+"
+" g:markdown_folding must be set before the markdown ftplugin is sourced.
+let g:markdown_folding = 1
+let g:markdown_syntax_conceal = 1
+
+function! s:MarkdownSetup() abort
+  setlocal wrap linebreak nolist breakindent
+  setlocal breakindentopt=shift:2
+  setlocal conceallevel=2 concealcursor=n
+  setlocal foldlevel=99
+  setlocal norelativenumber
+  setlocal spelllang=en_us
+  " markdown reads better with 4 spaces; the global default is 2
+  setlocal expandtab tabstop=4 shiftwidth=4 softtabstop=4
+  nnoremap <buffer> <expr> j v:count == 0 ? 'gj' : 'j'
+  nnoremap <buffer> <expr> k v:count == 0 ? 'gk' : 'k'
+  nnoremap <buffer> <silent> <leader>m :<C-U>call <SID>MarkdownToggleConceal()<CR>
+  nnoremap <buffer> <silent> <leader>s :<C-U>call <SID>MarkdownToggleSpell()<CR>
+  " Undo local settings/maps when this buffer changes file type.
+  let b:undo_ftplugin = get(b:, 'undo_ftplugin', '')
+        \ . '|setlocal wrap< linebreak< list< breakindent< breakindentopt<'
+        \ . ' conceallevel< concealcursor< foldlevel< relativenumber< spelllang< spell<'
+        \ . '|silent! nunmap <buffer> j|silent! nunmap <buffer> k'
+        \ . '|silent! nunmap <buffer> <leader>m|silent! nunmap <buffer> <leader>s'
+endfunction
+
+function! s:MarkdownToggleConceal() abort
+  if &l:conceallevel > 0
+    setlocal conceallevel=0
+    echo "Markdown: raw markup"
+  else
+    setlocal conceallevel=2
+    echo "Markdown: rendered"
+  endif
+endfunction
+
+function! s:MarkdownToggleSpell() abort
+  setlocal spell!
+  echo "Markdown spell: " . (&l:spell ? "on" : "off")
+endfunction
+
+augroup MarkdownSettings
+  autocmd!
+  autocmd FileType markdown call <SID>MarkdownSetup()
+augroup END
+
+" Markdown-specific highlight groups, using the same palette as MyColors.
+" Keep this in a function + ColorScheme autocmd so :colorscheme doesn't wipe it.
+function! s:MarkdownHighlights() abort
+  hi markdownH1                guifg=#569cd6 gui=bold
+  hi markdownH2                guifg=#4ec9b0 gui=bold
+  hi markdownH3                guifg=#dcdcaa gui=bold
+  hi markdownH4                guifg=#c586c0 gui=bold
+  hi markdownH5                guifg=#ce9178 gui=bold
+  hi markdownH6                guifg=#9cdcfe gui=bold
+  hi markdownHeadingDelimiter  guifg=#909090
+  hi markdownCode              guifg=#ce9178
+  hi markdownCodeBlock         guifg=#d4d4d4
+  hi markdownCodeDelimiter     guifg=#909090
+  hi markdownBold              guifg=#ffffff gui=bold
+  hi markdownItalic            guifg=#d4d4d4 gui=italic
+  hi markdownBoldItalic        guifg=#ffffff gui=bold,italic
+  hi markdownStrike            guifg=#999999 gui=strikethrough
+  hi markdownLinkText          guifg=#4fc1ff gui=underline
+  hi markdownUrl               guifg=#6a9955
+  hi markdownListMarker        guifg=#569cd6
+  hi markdownOrderedListMarker guifg=#569cd6
+  hi markdownBlockquote        guifg=#6a9955 gui=italic
+  hi markdownRule              guifg=#909090
+  hi markdownFootnote          guifg=#808080
+  hi markdownFootnoteDefinition guifg=#808080
+endfunction
+
+augroup MarkdownColors
+  autocmd!
+  autocmd ColorScheme * call <SID>MarkdownHighlights()
+augroup END
+call s:MarkdownHighlights()
+
+
+" ============================================
 " VIM-PLUG PLUGIN MANAGER
 " ============================================
 

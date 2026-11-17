@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+warn() { printf 'theme btop: %s\n' "$*" >&2; }
+
+[[ ${THEME_REASON:-apply} == font ]] && exit 0
+
+state=${THEME_STATE:-"$HOME/.local/state/theme"}
+directory=${XDG_CONFIG_HOME:-"$HOME/.config"}/btop/themes
+
+if ! mkdir -p -- "$directory"; then
+    warn "cannot create $directory"
+    exit 0
+fi
+if ! cp -- "$state/btop.theme" "$directory/current.theme"; then
+    warn "cannot install $directory/current.theme"
+    exit 0
+fi
+
+# SIGUSR2 reloads the config and theme in btop 1.4.8. No process is normal.
+if pkill -USR2 -x btop; then
+    :
+else
+    reload_status=$?
+    (( reload_status == 1 )) || warn "could not reload btop (pkill exited $reload_status)"
+fi
+
+exit 0

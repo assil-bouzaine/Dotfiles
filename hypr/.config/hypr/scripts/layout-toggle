@@ -1,0 +1,59 @@
+#!/bin/bash
+# Tiling <-> floating for the focused workspace (SUPER + ALT + L), like
+# Omarchy 4.5's workspace layouts. conf.d/workspace-modes.lua does the work;
+# this saves the choice (restored at login) and shows which layout it is now.
+#   layout-toggle [workspace-id]
+STATE=${XDG_RUNTIME_DIR:-/tmp}/workspace-modes   # see conf.d/workspace-modes.lua
+NOTE=${XDG_RUNTIME_DIR:-/tmp}/layout-toggle.notification
+
+ws=${1:-$(hyprctl activeworkspace -j | jq -r '.id')}
+# Special and named workspaces (negative ids) keep what they have.
+[[ $ws =~ ^[0-9]+$ ]] && (( ws >= 1 )) || exit 1
+
+if grep -qx "$ws floating" "$STATE" 2>/dev/null; then new=tiling; else new=floating; fi
+
+# Saved first: loading the titlebars plugin reloads the config, and that pass
+# has to find the new mode in the file.
+# The config writes the boot defaults (workspace 1 floating) on its first
+# load; should the file be gone anyway, start from the same defaults.
+[[ -e $STATE ]] || echo "1 floating" > "$STATE"
+cp "$STATE" "$STATE.bak"
+{ grep -vx "$ws floating" "$STATE.bak"; [[ $new == floating ]] && echo "$ws floating"; } > "$STATE.tmp"
+mv "$STATE.tmp" "$STATE"
+
+if ! out=$(hyprctl eval "workspace_mode({ workspace = \"$ws\", mode = \"$new\" })" 2>&1); then
+    mv "$STATE.bak" "$STATE"
+    notify-send -a Layout -u critical "Layout didn't switch" "$out"
+    exit 1
+fi
+rm -f "$STATE.bak"
+
+if [[ $new == tiling ]]; then
+    # Windows minimized from here come back: only a floating workspace has a
+    # dock to restore them from.
+    hyprctl clients -j | jq -r --arg tag "minimized-from-$ws" \
+        '.[] | select((.tags // []) | map(sub("\\*$"; "")) | index($tag)) | .address' |
+    while read -r addr; do
+        hyprctl dispatch "hl.dsp.window.tag({ tag = \"-minimized-from-$ws\", window = \"address:$addr\" })" >/dev/null
+        hyprctl dispatch "hl.dsp.window.move({ workspace = \"$ws\", follow = false, window = \"address:$addr\" })" >/dev/null
+    done
+elif [[ -f /usr/lib/omarchy-hyprland-titlebars/titlebars.so ]] &&
+     ! hyprctl plugin list -j 2>/dev/null | jq -e 'any(.[]?; .name == "hyprbars")' >/dev/null 2>&1; then
+    # The plugin only loads while the config loads: the first floating
+    # workspace of a session needs one reload to get its titlebars.
+    hyprctl reload >/dev/null
+fi
+
+# One notification, replaced on every press instead of stacking.
+if [[ $new == floating ]]; then
+    title="Workspace $ws: floating"
+    body="Drag titlebars to move · SUPER + ALT + M minimizes to the dock"
+else
+    title="Workspace $ws: tiling"
+    body="SUPER + ALT + L to float again"
+fi
+last=$(cat "$NOTE" 2>/dev/null)
+if id=$(notify-send -p ${last:+-r "$last"} -a Layout -t 2500 "$title" "$body") && [[ $id =~ ^[0-9]+$ ]]; then
+    echo "$id" > "$NOTE"
+fi
+exit 0

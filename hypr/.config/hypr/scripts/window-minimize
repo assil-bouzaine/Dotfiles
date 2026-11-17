@@ -1,0 +1,26 @@
+#!/bin/bash
+# Minimize a window into the dock (SUPER + ALT + M, or the titlebar's −), like
+# Omarchy 4.5. Only on a floating workspace: its dock brings the window back.
+# The window waits on special:minimized, tagged with the workspace it left.
+#   window-minimize [window-address]
+STATE=${XDG_RUNTIME_DIR:-/tmp}/workspace-modes   # see conf.d/workspace-modes.lua
+
+if [[ -n ${1:-} ]]; then
+    addr=$1
+    ws=$(hyprctl clients -j | jq -r --arg a "$addr" 'first(.[] | select(.address == $a) | .workspace.id) // empty')
+else
+    read -r addr ws < <(hyprctl activewindow -j | jq -r '"\(.address // "") \(.workspace.id // "")"')
+fi
+[[ -n $addr && $ws =~ ^[0-9]+$ ]] || exit 1
+grep -qx "$ws floating" "$STATE" 2>/dev/null || exit 0
+
+# Remember only the workspace it left last.
+hyprctl clients -j | jq -r --arg a "$addr" \
+    '.[] | select(.address == $a) | (.tags // [])[] | sub("\\*$"; "") | select(test("^minimized-from-[0-9]+$"))' |
+while read -r tag; do
+    hyprctl dispatch "hl.dsp.window.tag({ tag = \"-$tag\", window = \"address:$addr\" })" >/dev/null
+done
+hyprctl dispatch "hl.dsp.window.tag({ tag = \"+minimized-from-$ws\", window = \"address:$addr\" })" >/dev/null
+hyprctl dispatch "hl.dsp.window.move({ workspace = \"special:minimized\", follow = false, window = \"address:$addr\" })" >/dev/null
+# Focus would stay with the hidden window, and the next window opened would join it.
+hyprctl dispatch "hl.dsp.focus({ workspace = \"$ws\" })" >/dev/null

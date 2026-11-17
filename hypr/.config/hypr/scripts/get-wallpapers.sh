@@ -1,6 +1,6 @@
 #!/bin/bash
 # Downloads the wallpaper set (from wallhaven.cc) into ~/Pictures/Wallpapers,
-# where wallpaper-cycle.sh and hyprlock.conf look for them.
+# where the wallpaper picker (SUPER + CTRL + SPACE) and hyprlock.conf look for them.
 # Safe to re-run: files that are already there are skipped.
 
 WALLPAPER_DIR="$HOME/Pictures/Wallpapers"

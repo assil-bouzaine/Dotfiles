@@ -1,0 +1,28 @@
+# Build Omarchy's titlebars against the installed Arch [extra] Hyprland.
+# Plugins require the exact Hyprland build; titlebars-rebuild rebuilds this
+# package after upgrades, and built-for records the full package version.
+
+pkgname=omarchy-hyprland-titlebars
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="Titlebars for Omarchy's floating workspaces"
+arch=('x86_64' 'aarch64')
+url='https://github.com/omacom/omarchy-hyprland-titlebars'
+license=('BSD-3-Clause' 'MIT')
+depends=('hyprland' 'hyprlang' 'hyprutils' 'glibc' 'libgcc' 'libstdc++')
+makedepends=('cmake' 'pkgconf')
+options=('!lto' '!debug')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('275cef436530b3cd2e665b199d8df142e78fde4c00067d99676068e2c6f40e69')
+
+build() {
+  cmake -S "$srcdir/$pkgname-$pkgver" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build build
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  pacman -Q hyprland | cut -d' ' -f2 > "$pkgdir/usr/lib/omarchy-hyprland-titlebars/built-for"
+  install -Dm644 "$pkgname-$pkgver/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$pkgname-$pkgver/LICENSE.MIT" "$pkgdir/usr/share/licenses/$pkgname/LICENSE.MIT"
+}

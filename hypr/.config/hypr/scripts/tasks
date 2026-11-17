@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Open, bring back or close the floating btop task manager (SUPER + T).
+set -euo pipefail
+
+address=$(hyprctl clients -j | jq -r 'first(.[] | select(.class == "bar-tasks") | .address) // empty')
+
+if [[ -z $address ]]; then
+    # A smaller font than the terminal's: on the 1366x768 laptop panel the
+    # window is ~1100x600, and btop needs at least 80x24 cells.
+    setsid kitty --class=bar-tasks --title="Task manager" -o font_size=11 -e btop </dev/null >/dev/null 2>&1 &
+    exit 0
+fi
+
+focused=$(hyprctl activewindow -j | jq -r '.address // empty')
+if [[ $address == "$focused" ]]; then
+    hyprctl dispatch "hl.dsp.window.close({ window = \"address:$address\" })" >/dev/null
+else
+    workspace=$(hyprctl activeworkspace -j | jq -r '(.name // (.id | tostring)) | @json')
+    hyprctl dispatch "hl.dsp.window.move({ workspace = $workspace, follow = false, window = \"address:$address\" })" >/dev/null
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+fi

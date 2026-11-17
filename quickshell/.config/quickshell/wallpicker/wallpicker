@@ -1,0 +1,6 @@
+#!/bin/bash
+# Open / close the wallpaper picker (SUPER + CTRL + SPACE). It's a short-lived
+# Quickshell instance (shell.qml next to this file): it quits when you pick
+# or close, so nothing stays running. A second press while open closes it.
+qs kill -c wallpicker >/dev/null 2>&1 && exit 0
+exec qs -c wallpicker -d >/dev/null 2>&1

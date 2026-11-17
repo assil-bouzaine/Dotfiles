@@ -194,9 +194,9 @@ if [ "$XDG_SESSION_TYPE" = "x11" ]; then
     setxkbmap -option ctrl:nocaps,ctrl:ralt_rctrl
 fi
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+# Node versions via fnm (replaced nvm on 2026-11-17: nvm added ~0.4 s to every new shell)
+# --use-on-cd switches Node automatically in folders with a .nvmrc / .node-version file
+eval "$(fnm env --use-on-cd --shell zsh)"
 
 # Added by Feynman installer
 export PATH="$HOME/.local/bin:$PATH"
@@ -211,7 +211,7 @@ export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-
 # Added by camber installer
 export PATH="$HOME/.camber/bin:$PATH"
 
-# Last, so the tmux server starts with the full PATH / nvm env above
+# Last, so the tmux server starts with the full PATH / fnm env above
 # Auto-attach or create tmux session
 if command -v tmux &> /dev/null && [ -z "$TMUX" ]; then
   tmux attach -t main 2>/dev/null || tmux new-session -s main

@@ -1,0 +1,124 @@
+@import url("../../.local/state/theme/colors.css");
+
+/* Screen-share picker: same ink, edge, font and accents as the bar
+ * (waybar/style.css), the rofi cards and the network card.
+ * Layout follows Omarchy 4.5's picker theme. GTK4 CSS. */
+
+* {
+    all: unset;
+    font-weight: 600;
+    font-size: 13px;
+    color: @fg;
+}
+
+/* The reset clears the imported font, so apply the theme again after it. */
+@import url("../../.local/state/theme/colors.css");
+
+.window {
+    background: @ink;
+    border: 1px solid @edge;
+    border-radius: 16px;
+    margin: 4px;
+    padding: 16px;
+}
+
+tabs {
+    padding: 2px 4px 10px 4px;
+}
+
+tabs > tab {
+    margin-right: 6px;
+    padding: 6px 14px;
+    border-radius: 9px;
+    background-color: @field;
+}
+
+tabs > tab:hover {
+    background-color: @lift;
+}
+
+.tab-label {
+    color: @muted;
+    transition: color 120ms ease;
+}
+
+tabs > tab:checked,
+tabs > tab:active {
+    background-color: alpha(@accent, 0.15);
+    box-shadow: inset 0 0 0 1px alpha(@accent, 0.4);
+}
+
+tabs > tab:checked > .tab-label,
+tabs > tab:active > .tab-label {
+    color: @accent;
+    font-weight: 800;
+}
+
+tabs > tab:focus > .tab-label {
+    color: @fg;
+}
+
+.page {
+    padding: 8px 4px;
+}
+
+.image-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: @muted;
+    padding: 6px 4px 2px 4px;
+}
+
+flowboxchild > .card,
+button > .card {
+    transition: all 120ms ease;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background-color: @field;
+    padding: 6px;
+}
+
+flowboxchild:hover > .card,
+button:hover > .card {
+    background-color: @lift;
+    border-color: alpha(@accent, 0.45);
+}
+
+flowboxchild:active > .card,
+flowboxchild:selected > .card,
+button:active > .card,
+button:selected > .card,
+button:focus > .card {
+    background-color: alpha(@accent, 0.12);
+    border-color: @accent;
+}
+
+.image {
+    border-radius: 8px;
+}
+
+.region-button {
+    padding: 8px 16px;
+    border-radius: 10px;
+    background-image: linear-gradient(90deg, @accent, @accent2);
+    transition: all 120ms ease;
+}
+
+.region-button > label {
+    color: @on_accent;
+    font-weight: 800;
+}
+
+.region-button:not(:disabled):hover,
+.region-button:not(:disabled):focus {
+    box-shadow: 0 0 0 2px alpha(@accent, 0.45);
+}
+
+.region-button:disabled {
+    background-image: none;
+    background-color: @lift;
+}
+
+.region-button:disabled > label {
+    color: @faint;
+}

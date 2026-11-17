@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+
+warn() { printf 'theme gtk: %s\n' "$*" >&2; }
+
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+state=${THEME_STATE:-"$HOME/.local/state/theme"}
+marker='/* managed by theme */'
+
+if [[ ! -r "$state/gtk.css" ]]; then
+    warn "cannot read $state/gtk.css"
+    exit 0
+fi
+IFS= read -r first_line < "$state/gtk.css" || :
+if [[ $first_line != "$marker" ]]; then
+    warn "refusing CSS without the managed marker: $state/gtk.css"
+    exit 0
+fi
+
+for version in 3.0 4.0; do
+    directory=$config_home/gtk-$version
+    css=$directory/gtk.css
+    backup=$css.bak-theme
+    if ! mkdir -p -- "$directory"; then
+        warn "cannot create $directory"
+        continue
+    fi
+    if [[ -e $css || -L $css ]]; then
+        first_line=''
+        IFS= read -r first_line < "$css" || :
+        if [[ $first_line != "$marker" && ! -e $backup && ! -L $backup ]]; then
+            if ! cp -p -- "$css" "$backup"; then
+                warn "cannot back up $css; leaving it untouched"
+                continue
+            fi
+        fi
+    fi
+    # Replacing the destination also converts an existing symlink to a copy.
+    if [[ -L $css ]] || ! cmp -s -- "$state/gtk.css" "$css"; then
+        cp --remove-destination -- "$state/gtk.css" "$css" || warn "cannot install $css"
+    fi
+done
+
+[[ ${THEME_REASON:-apply} == font ]] && exit 0
+
+gtk_theme=adw-gtk3-dark
+prefer_dark=true
+color_scheme=prefer-dark
+if [[ ${THEME_MODE:-dark} == light ]]; then
+    gtk_theme=adw-gtk3
+    prefer_dark=false
+    color_scheme=prefer-light
+fi
+
+# Preserve every other key, comment, section and line ending in settings.ini.
+python3 - "$config_home" "$gtk_theme" "$prefer_dark" <<'PY' || warn 'could not update GTK settings'
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+
+config, theme, dark = sys.argv[1:]
+values = {"gtk-theme-name": theme, "gtk-application-prefer-dark-theme": dark}
+header = re.compile(r"^[ \t]*\[([^\]\r\n]+)\][ \t]*(?:[;#].*)?$")
+setting = re.compile(r"^([ \t]*)(gtk-theme-name|gtk-application-prefer-dark-theme)([ \t]*=[ \t]*)([^\r\n]*)(\r?\n)?$")
+
+for version in ("3.0", "4.0"):
+    path = Path(config) / f"gtk-{version}" / "settings.ini"
+    temporary = None
+    try:
+        original = path.read_bytes() if path.exists() else b""
+        text = original.decode("utf-8", "surrogateescape")
+        newline = "\r\n" if "\r\n" in text else "\n"
+        output, seen = [], set()
+        inside = found = False
+
+        def add_missing():
+            for key, value in values.items():
+                if key not in seen:
+                    if output and not output[-1].endswith("\n"):
+                        output.append(newline)
+                    output.append(f"{key}={value}{newline}")
+
+        for line in text.splitlines(keepends=True):
+            section = header.match(line.rstrip("\r\n"))
+            if section:
+                if inside:
+                    add_missing()
+                inside = section[1] == "Settings"
+                found |= inside
+                seen = set()
+            match = setting.match(line) if inside else None
+            if match:
+                seen.add(match[2])
+                line = f"{match[1]}{match[2]}{match[3]}{values[match[2]]}{match[5] or ''}"
+            output.append(line)
+        if inside:
+            add_missing()
+        if not found:
+            if output and not output[-1].endswith("\n"):
+                output.append(newline)
+            output.append(f"[Settings]{newline}")
+            add_missing()
+        updated = "".join(output).encode("utf-8", "surrogateescape")
+        if updated != original:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+                temporary = stream.name
+                stream.write(updated)
+            os.chmod(temporary, path.stat().st_mode & 0o777 if path.exists() else 0o644)
+            os.replace(temporary, path)
+            temporary = None
+    except OSError as error:
+        print(f"theme gtk: cannot update {path}: {error}", file=sys.stderr)
+    finally:
+        if temporary is not None:
+            os.unlink(temporary)
+PY
+
+if command -v gsettings >/dev/null 2>&1; then
+    timeout 1s gsettings set org.gnome.desktop.interface color-scheme "$color_scheme" \
+        >/dev/null || warn 'could not set the GNOME colour scheme preference'
+    timeout 1s gsettings set org.gnome.desktop.interface gtk-theme "$gtk_theme" \
+        >/dev/null || warn 'could not set the GNOME GTK theme'
+else
+    warn 'gsettings is unavailable; settings.ini was updated'
+fi
+
+exit 0

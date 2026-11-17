@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: titlebars-rebuild [--check|--help]
+
+Rebuild Omarchy's titlebars for the installed Hyprland as your user,
+then install the package with sudo pacman.
+
+  --check  Report the build target: 0=current, 1=stale, 2=not installed.
+  --help   Show this help.
+EOF
+}
+
+if (( $# > 1 )); then
+  usage >&2
+  exit 2
+fi
+
+case "${1:-}" in
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  --check)
+    plugin_dir=/usr/lib/omarchy-hyprland-titlebars
+    if [[ ! -f "$plugin_dir/titlebars.so" || ! -f "$plugin_dir/built-for" ]]; then
+      printf '%s\n' 'Titlebars is not installed (missing titlebars.so or built-for).'
+      exit 2
+    fi
+    hyprland_version=$(pacman -Q hyprland | cut -d' ' -f2)
+    built_for=$(<"$plugin_dir/built-for")
+    if [[ "$built_for" == "$hyprland_version" ]]; then
+      printf 'Titlebars is current (Hyprland %s).\n' "$hyprland_version"
+      exit 0
+    fi
+    printf 'Titlebars is stale (built for %s; installed Hyprland %s): run titlebars-rebuild.\n' \
+      "$built_for" "$hyprland_version"
+    exit 1
+    ;;
+  "")
+    ;;
+  *)
+    printf 'Unknown option: %s\n' "$1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+if (( EUID == 0 )); then
+  printf '%s\n' 'Run titlebars-rebuild as your user, not root; it uses sudo only to install.' >&2
+  exit 1
+fi
+
+pkgbuild="$HOME/.local/share/titlebars/PKGBUILD"
+build_dir="${XDG_CACHE_HOME:-$HOME/.cache}/titlebars-build"
+
+if [[ ! -f "$pkgbuild" ]]; then
+  printf 'Missing PKGBUILD: %s (stow titlebars first).\n' "$pkgbuild" >&2
+  exit 1
+fi
+
+rm -rf -- "$build_dir"
+mkdir -p -- "$build_dir"
+cp -- "$pkgbuild" "$build_dir/PKGBUILD"
+cd -- "$build_dir"
+makepkg -f --noconfirm --needed
+
+shopt -s nullglob
+packages=(*.pkg.tar.zst)
+if (( ${#packages[@]} != 1 )); then
+  printf 'Expected exactly one *.pkg.tar.zst in %s; found %d.\n' \
+    "$PWD" "${#packages[@]}" >&2
+  exit 1
+fi
+
+sudo pacman -U --noconfirm -- "${packages[0]}"
+printf '%s\n' 'Done. Reload Hyprland (hyprctl reload) or log out and back in to load the new titlebars.'

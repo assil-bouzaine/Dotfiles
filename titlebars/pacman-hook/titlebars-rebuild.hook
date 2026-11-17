@@ -1,0 +1,12 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = hyprland
+
+[Action]
+Description = Reminding to rebuild the Hyprland titlebars plugin...
+When = PostTransaction
+# Exec runs directly, without a shell (alpm-hooks(5)). Use one whitespace-free
+# printf format: printf expands \040 to spaces and \n to a newline, so neither
+# argument quoting nor shell redirection is needed; >> is literal message text.
+Exec = /usr/bin/printf >>\040Hyprland\040was\040upgraded:\040run\040\040titlebars-rebuild\040\040(as\040your\040user)\040to\040rebuild\040the\040floating-window\040titlebars.\n

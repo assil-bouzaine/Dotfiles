@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+
+[[ ${THEME_REASON:-apply} == font ]] && exit 0
+
+warn() { printf 'theme kde: %s\n' "$*" >&2; }
+
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
+state=${THEME_STATE:-"$HOME/.local/state/theme"}
+globals=$config_home/kdeglobals
+schemes=$data_home/color-schemes
+
+active_scheme() {
+    [[ -r $globals ]] || return 0
+    LC_ALL=C awk '
+        /^[ \t]*\[/ { general = ($0 ~ /^[ \t]*\[General\][ \t]*\r?$/) }
+        general && /^[ \t]*ColorScheme[ \t]*=/ {
+            sub(/^[^=]*=[ \t]*/, "")
+            sub(/[ \t\r]+$/, "")
+            print
+            exit
+        }
+    ' "$globals"
+}
+
+if [[ ! -r "$state/kde.colors" ]]; then
+    warn "cannot read $state/kde.colors"
+    exit 0
+fi
+if ! mkdir -p -- "$config_home" "$schemes"; then
+    warn 'cannot create KDE configuration directories'
+    exit 0
+fi
+
+scheme=ThemeA
+other=ThemeB
+if [[ $(active_scheme) == ThemeA ]]; then
+    scheme=ThemeB
+    other=ThemeA
+fi
+if ! cp --remove-destination -- "$state/kde.colors" "$schemes/$scheme.colors"; then
+    warn "cannot install $schemes/$scheme.colors"
+    exit 0
+fi
+rm -f -- "$schemes/$other.colors" || warn "cannot remove $schemes/$other.colors"
+
+# This CLI writes kdeglobals and broadcasts the palette change without Plasma.
+# Offscreen avoids a dependency on a display or the caller's Qt platform theme.
+if command -v plasma-apply-colorscheme >/dev/null 2>&1; then
+    if QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= \
+        timeout 2s plasma-apply-colorscheme "$scheme" >/dev/null; then
+        # Some versions return success even when they did not apply anything.
+        [[ $(active_scheme) == "$scheme" ]] && exit 0
+        warn 'plasma-apply-colorscheme left kdeglobals unchanged; applying directly'
+    else
+        warn 'plasma-apply-colorscheme failed; applying directly'
+    fi
+else
+    warn 'plasma-apply-colorscheme is unavailable; applying directly'
+fi
+
+# Copy all palette groups, WM colours and KDE contrast, preserving other settings.
+# Drop the stale applicator hash so a later invocation cannot reuse an old palette.
+if ! python3 - "$state/kde.colors" "$globals" "$scheme" <<'PY'
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+
+source, destination, scheme = sys.argv[1:]
+path = Path(destination)
+temporary = None
+header = re.compile(r"^[ \t]*(\[[^\r\n]+\])[ \t]*$")
+
+def sections(text):
+    result = {"": []}
+    group = ""
+    for line in text.splitlines(keepends=True):
+        match = header.match(line.rstrip("\r\n"))
+        if match:
+            group = match[1]
+        result.setdefault(group, []).append(line)
+    return result
+
+def set_key(lines, key, value):
+    pattern = re.compile(rf"^[ \t]*{re.escape(key)}(?:\[\$[a-z]+\])?[ \t]*=")
+    result = [line for line in lines if not pattern.match(line)]
+    if value is not None:
+        if result and not result[-1].endswith("\n"):
+            result[-1] += "\n"
+        result.append(f"{key}={value}\n")
+    return result
+
+try:
+    palette = sections(Path(source).read_bytes().decode("utf-8", "surrogateescape"))
+    original = path.read_bytes() if path.exists() else b""
+    current = sections(original.decode("utf-8", "surrogateescape"))
+    for group, lines in palette.items():
+        if group.startswith(("[Colors:", "[ColorEffects:")) or group == "[WM]":
+            current[group] = lines
+    general = current.setdefault("[General]", ["[General]\n"])
+    general = set_key(general, "ColorSchemeHash", None)
+    current["[General]"] = set_key(general, "ColorScheme", scheme)
+    kde = current.setdefault("[KDE]", ["[KDE]\n"])
+    for line in palette.get("[KDE]", []):
+        if line.startswith("contrast="):
+            kde = set_key(kde, "contrast", line.partition("=")[2].strip())
+    current["[KDE]"] = kde
+    updated = ""
+    for lines in current.values():
+        if updated and not updated.endswith("\n"):
+            updated += "\n"
+        updated += "".join(lines)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+        temporary = stream.name
+        stream.write(updated.encode("utf-8", "surrogateescape"))
+    os.chmod(temporary, path.stat().st_mode & 0o777 if path.exists() else 0o644)
+    os.replace(temporary, path)
+    temporary = None
+except OSError as error:
+    print(f"theme kde: cannot update {path}: {error}", file=sys.stderr)
+    sys.exit(1)
+finally:
+    if temporary is not None:
+        os.unlink(temporary)
+PY
+then
+    warn 'could not install the KDE palette'
+    exit 0
+fi
+
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+    timeout 1s kwriteconfig6 --file kdeglobals --group General --key ColorScheme "$scheme" \
+        || warn 'kwriteconfig6 failed; the palette and scheme were written directly'
+else
+    warn 'kwriteconfig6 is unavailable; the palette and scheme were written directly'
+fi
+
+# The same PaletteChanged notification used by plasma-apply-colorscheme.
+if command -v dbus-send >/dev/null 2>&1; then
+    timeout 0.5s dbus-send --session --type=signal /KGlobalSettings \
+        org.kde.KGlobalSettings.notifyChange int32:0 int32:0 \
+        || warn 'could not notify running KDE applications'
+else
+    warn 'dbus-send is unavailable; reopen KDE applications to load the palette'
+fi
+
+exit 0
