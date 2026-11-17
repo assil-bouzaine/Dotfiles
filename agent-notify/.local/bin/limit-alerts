@@ -1,0 +1,332 @@
+#!/usr/bin/env python3
+"""limit-alerts: a Telegram ping when a Claude or Codex usage limit comes back.
+
+  limit-alerts                 watch (this is what the systemd service runs)
+  limit-alerts status          what is used right now and when each window resets
+  limit-alerts check           fetch once and print; sends and records nothing
+  limit-alerts test            send one test message through each bot
+  --dry-run                    with the watcher: one pass, print instead of send, no state
+  --interval N                 seconds between polls (default 120; 20 near a reset)
+
+Used windows are tracked even below 100% so their resets are never missed.
+An exhausted window also gets a "back at 14:42, I'll ping you" message. The 5h and weekly windows are both watched: if the
+week is used up, the 5h reset doesn't help, so the ping follows whichever resets last.
+
+Messages go out through the existing per-agent bots (tg-notify): the claude bot for Claude,
+the codex bot for Codex, and `tg-notify off` still mutes them. Nothing listens for replies,
+so it never competes with tg-bridge for the bot's updates.
+"""
+import html
+import json
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib/agent-notify"))
+from agentnotify import limits, telegram  # noqa: E402
+
+PROVIDERS = ("claude", "codex")
+STATE = telegram.STATE / "limits.json"
+SAME_RESET = 180          # seconds: a reset time that moves less than this is the same one
+NEAR_RESET = 300          # poll faster when a reset is this close
+FAR_RESET = 900           # ... or this recently passed
+STALE_AFTER = 600         # "still limited?" after the reset is this late
+STALE_EVERY = 1800
+AUTH_EVERY = 6 * 3600
+LATE_FREE = 2 * 3600      # don't announce a reset we missed by more than this
+
+
+# ---- time as a human reads it ----------------------------------------------
+
+def clock(ts):
+    # round up to the minute: a 13:29:59 reset reads as 13:30, which is what you'd write
+    dt = datetime.fromtimestamp(ts + 30).astimezone()
+    days = (dt.date() - datetime.now().astimezone().date()).days
+    hm = dt.strftime("%H:%M")
+    if days == 0:
+        return hm
+    if days == 1:
+        return "tomorrow " + hm
+    if 0 < days < 7:
+        return dt.strftime("%a ") + hm
+    return dt.strftime("%b ") + str(dt.day) + ", " + hm
+
+
+def left(ts, now=None):
+    secs = int(ts - (now or time.time()))
+    if secs <= 0:
+        return "now"
+    d, h, m = secs // 86400, secs % 86400 // 3600, secs % 3600 // 60
+    if d:
+        return f"{d}d {h}h"
+    return f"{h}h {m}m" if h else f"{m}m"
+
+
+def name(provider):
+    return provider.capitalize()
+
+
+# ---- messages ---------------------------------------------------------------
+
+def hit_text(u, b):
+    return (f"<b>{name(u.provider)}: {b.label} limit used up</b>\n"
+            f"Back at <b>{clock(b.resets_at)}</b> (in {left(b.resets_at)}).\n"
+            f"<i>I'll ping you the moment it resets.</i>")
+
+
+def free_text(u, reset, label):
+    lines = [f"<b>{name(u.provider)} is back</b>",
+             f"The {label} limit reset at {clock(reset)}."]
+    other = [w for w in u.windows if w.key != label]
+    if other:
+        lines.append("")
+        for w in other:
+            when = f", resets {clock(w.resets_at)}" if w.resets_at else ""
+            lines.append(f"{w.label.capitalize()}: {w.percent:.0f}% used{when}")
+    return "\n".join(lines)
+
+
+def stale_text(u, b):
+    return (f"<b>{name(u.provider)} still looks limited</b>\n"
+            f"The {b.label} reset was due at {clock(b.resets_at)}, but the API still says "
+            f"{b.percent:.0f}%. I'll keep checking.")
+
+
+def auth_text(u):
+    return (f"<b>{name(u.provider)} needs a login refresh</b>\n"
+            f"{html.escape(u.error)}\n\n<i>I'll keep retrying.</i>")
+
+
+# ---- sending ----------------------------------------------------------------
+
+def notify(provider, text, dry=False):
+    """Send (or print). True when the moment has been handled, muted or not."""
+    if dry:
+        print(f"\n--- {provider} ---\n{text}\n", flush=True)
+        return True
+    if telegram.muted(provider):
+        telegram.log(provider, "limit", "not sent: muted")
+        print(f"{provider}: muted, not sent", flush=True)
+        return True
+    try:
+        telegram.Bot(provider).send(text, html_mode=True)
+        telegram.log(provider, "limit", "sent")
+        print(f"{provider}: sent ({text.splitlines()[0][3:-4]})", flush=True)
+        return True
+    except telegram.TelegramError as e:
+        telegram.log(provider, "limit", f"FAILED: {e}")
+        print(f"{provider}: send failed: {e}", flush=True)
+        return False
+
+
+# ---- state ------------------------------------------------------------------
+
+def load_state():
+    try:
+        data = json.loads(STATE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(state):
+    state["providers"] = {p: s for p, s in state.get("providers", {}).items() if s}
+    state["last_tick"] = time.time()
+    telegram.state_dir()
+    tmp = STATE.with_name(STATE.name + ".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+    tmp.replace(STATE)
+
+
+def same(a, b):
+    return a is not None and b is not None and abs(a - b) < SAME_RESET
+
+
+# ---- one pass ---------------------------------------------------------------
+
+def tick(state, dry=False):
+    used = state.setdefault("providers", {})
+    for provider in PROVIDERS:
+        u = limits.FETCH[provider]()
+        st = used.setdefault(provider, {})
+        now = time.time()
+        if not u.ok:
+            print(f"{provider}: {u.error}", flush=True)
+            if u.auth_error and now - (st.get("auth_at") or 0) > AUTH_EVERY:
+                if notify(provider, auth_text(u), dry):
+                    st["auth_at"] = now
+            continue
+        st["last_ok"] = now
+        # Seed a new watcher from recent local Codex usage, including a reset that
+        # happened before startup. A fresh live reading still gates every alert.
+        if "watched" not in st:
+            st["watched"] = {}
+            if provider == "codex":
+                for w in limits.codex_recent_windows(now, LATE_FREE):
+                    watch(st, w)
+        prev = st.get("blocked") or {}
+        if prev.get("reset"):
+            watch(st, limits.Window(prev["label"], prev["label"],
+                                    prev.get("percent", 100), prev["reset"]))
+        for w in u.windows:
+            if w.percent > 0 and w.resets_at:
+                watch(st, w)
+        b = u.blocker()
+        if b and b.resets_at:
+            prev = st.get("blocked") or {}
+            if not same(prev.get("reset"), b.resets_at):
+                st["blocked"] = {"label": b.label, "reset": b.resets_at, "percent": b.percent}
+            if not same(st.get("hit_for"), b.resets_at) and b.resets_at - now > 45:
+                if notify(provider, hit_text(u, b), dry):
+                    st["hit_for"] = b.resets_at
+            if now > b.resets_at + STALE_AFTER and now - (st.get("stale_at") or 0) > STALE_EVERY:
+                if notify(provider, stale_text(u, b), dry):
+                    st["stale_at"] = now
+        else:
+            for ident, pending in list(st["watched"].items()):
+                reset = pending["reset"]
+                if now < reset:
+                    continue
+                # Missing windows are not evidence of restored access.
+                if not u.window(pending["label"]):
+                    continue
+                if not same((st.get("done_for") or {}).get(pending["label"]), reset) and not (
+                        not st.get("done_for") and same(st.get("free_for"), reset)):
+                    if now - reset >= LATE_FREE and not pending.get("ready"):
+                        st.setdefault("done_for", {})[pending["label"]] = reset
+                        del st["watched"][ident]
+                        continue
+                    pending["ready"] = True
+                    if not notify(provider, free_text(u, reset, pending["label"]), dry):
+                        continue  # Keep the event until Telegram accepts it, even after LATE_FREE.
+                    st["free_for"] = reset
+                st.setdefault("done_for", {})[pending["label"]] = reset
+                del st["watched"][ident]
+            st["blocked"] = None
+
+
+def watch(st, w):
+    done = (st.get("done_for") or {}).get(w.key)
+    if (not w.resets_at
+            or (not st.get("done_for") and same(st.get("free_for"), w.resets_at))
+            or (done is not None and w.resets_at <= done + SAME_RESET)):
+        return
+    # Deduplicate the same window even if an API's relative timer drifts slightly.
+    if any(p["label"] == w.key and same(p["reset"], w.resets_at)
+           for p in st["watched"].values()):
+        return
+    st["watched"][f"{w.key}:{int(w.resets_at)}"] = {
+        "label": w.key, "reset": w.resets_at}
+
+
+def sleep_for(state, default):
+    now = time.time()
+    for st in (state.get("providers") or {}).values():
+        pending = list((st.get("watched") or {}).values())
+        pending.append(st.get("blocked") or {})
+        if any(b.get("reset") and -FAR_RESET < b["reset"] - now < NEAR_RESET
+               for b in pending):
+            return 20
+    return default
+
+
+# ---- printing ---------------------------------------------------------------
+
+def print_usage(u):
+    if not u.ok:
+        print(f"{name(u.provider):<7} ! {u.error}")
+        return
+    parts = []
+    for w in u.windows:
+        when = f" · resets {clock(w.resets_at)} (in {left(w.resets_at)})" if w.resets_at else ""
+        parts.append(f"{w.label} {w.percent:.0f}%{when}")
+    print(f"{name(u.provider):<7} {'BLOCKED' if u.blocker() else 'ok':<7} " + " · ".join(parts))
+
+
+def status():
+    state = load_state()
+    for provider in PROVIDERS:
+        print_usage(limits.FETCH[provider]())
+        st = (state.get("providers") or {}).get(provider) or {}
+        bits = []
+        if st.get("hit_for"):
+            bits.append(f"hit announced for reset {clock(st['hit_for'])}")
+        if st.get("blocked"):
+            bits.append(f"blocked until {clock(st['blocked']['reset'])}")
+        for pending in (st.get("watched") or {}).values():
+            bits.append(f"watching {pending['label']} reset {clock(pending['reset'])}")
+        if st.get("auth_at"):
+            bits.append(f"login warning sent {clock(st['auth_at'])}")
+        if st.get("last_ok"):
+            bits.append(f"last ok {clock(st['last_ok'])}")
+        if bits:
+            print(f"        {' · '.join(bits)}")
+    if state.get("last_tick"):
+        print(f"last watch pass: {clock(state['last_tick'])}")
+
+
+def test():
+    ok = True
+    for provider in PROVIDERS:
+        if telegram.muted(provider):
+            print(f"{provider}: muted (tg-notify --bot {provider} on)")
+            continue
+        try:
+            telegram.Bot(provider).send(
+                f"<b>limit-alerts is watching {name(provider)}</b>\n"
+                f"5h and weekly limits. You'll hear from me when one runs out and "
+                f"again when it resets.", html_mode=True)
+            print(f"{provider}: sent")
+        except telegram.TelegramError as e:
+            print(f"{provider}: {e}")
+            ok = False
+    return 0 if ok else 1
+
+
+def main(argv):
+    args = list(argv)
+    dry = "--dry-run" in args
+    args = [a for a in args if a != "--dry-run"]
+    interval = 120
+    if "--interval" in args:
+        i = args.index("--interval")
+        try:
+            interval = max(15, int(args[i + 1]))
+            del args[i:i + 2]
+        except (IndexError, ValueError):
+            sys.exit("--interval needs a number of seconds")
+    cmd = args[0] if args else "run"
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    if cmd == "check":
+        for provider in PROVIDERS:
+            print_usage(limits.FETCH[provider]())
+        return 0
+    if cmd == "status":
+        status()
+        return 0
+    if cmd == "test":
+        return test()
+    if cmd != "run":
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+
+    state = load_state()
+    if dry:
+        tick(state, dry=True)
+        return 0
+    print(f"limit-alerts watching {', '.join(PROVIDERS)} every {interval}s", flush=True)
+    while True:
+        try:
+            tick(state)
+        except Exception as e:          # keep watching whatever happens
+            print(f"pass failed: {type(e).__name__}: {e}", flush=True)
+        save_state(state)
+        time.sleep(sleep_for(state, interval))
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

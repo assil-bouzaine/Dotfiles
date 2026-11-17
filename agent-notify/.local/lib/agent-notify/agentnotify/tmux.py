@@ -1,16 +1,22 @@
 """tmux side: find the agents' panes, read their screens, spot a dialog's numbered choices."""
 import os
+import fcntl
 import re
 import shlex
 import subprocess
+import time
+import uuid
 from collections import Counter
+from contextlib import contextmanager
+from pathlib import Path
 
 AGENTS = ("claude", "codex")
 BIN = ["tmux"]        # tests point this at a throwaway server: ["tmux", "-L", "test"]
-FIELDS = ("id", "cmd", "tag", "state", "path", "where")
+FIELDS = ("id", "cmd", "tag", "state", "path", "where", "pid", "session", "generation", "prompt")
 FORMAT = "\t".join(("#{pane_id}", "#{pane_current_command}", "#{@agent_name}",
                     "#{@agent_state}", "#{pane_current_path}",
-                    "#{session_name}:#{window_index}"))
+                    "#{session_name}:#{window_index}", "#{pane_pid}",
+                    "#{@agent_session}", "#{@tg_generation}", "#{@tg_prompt}"))
 
 
 def tmux(*args, input=None):
@@ -19,6 +25,77 @@ def tmux(*args, input=None):
                               text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+def checked(*args, input=None):
+    """Input must report a failure instead of acknowledging a paste that never happened."""
+    try:
+        result = subprocess.run([*BIN, *args], input=input, capture_output=True,
+                                text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise RuntimeError("Couldn't reach the agent's terminal. Try /list.") from e
+    if result.returncode:
+        raise RuntimeError("The terminal rejected the action. Check /screen before retrying.")
+    return result.stdout
+
+
+def process_instance(pid):
+    """Linux foreground job + start time; a shell's pid alone survives agent restarts."""
+    try:
+        fields = Path(f"/proc/{int(pid)}/stat").read_text().rsplit(")", 1)[1].split()
+        foreground = int(fields[5])
+        if foreground <= 0:
+            return ""
+        started = Path(f"/proc/{foreground}/stat").read_text().rsplit(")", 1)[1].split()[19]
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        return f"{boot}:{foreground}:{started}"
+    except (OSError, ValueError, IndexError, TypeError):
+        return ""
+
+
+def identity(p):
+    return dict(pane=p["id"], agent=p.get("agent") or p["cmd"], server=server(),
+                instance=p.get("instance") or process_instance(p.get("pid")),
+                session=p.get("session") or "", generation=p.get("generation") or "",
+                prompt=p.get("prompt") or "")
+
+
+def same(p, route):
+    """Legacy routes have no process identity: fail closed until a fresh alert or /list."""
+    return bool(route.get("instance")) and p.get("instance") == route["instance"] \
+        and p.get("agent", p.get("cmd")) == route.get("agent") \
+        and (p.get("generation") or "") == (route.get("generation") or "") \
+        and (not route.get("session") or p.get("session") == route["session"])
+
+
+@contextmanager
+def input_lock(pane_id):
+    """Serialize terminal actions across both bot services, including button presses."""
+    root = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+    folder = root / "tg-notify/locks"
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = folder / ("pane-" + re.sub(r"[^A-Za-z0-9_-]", "_", pane_id))
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(fd, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+
+
+def paste(pane_id, text, validate, after=None):
+    """A unique buffer, checked commands, and a final validation under the pane lock."""
+    with input_lock(pane_id):
+        validate()
+        name = "tgbridge-" + uuid.uuid4().hex
+        try:
+            checked("load-buffer", "-b", name, "-", input=text)
+            checked("paste-buffer", "-p", "-d", "-b", name, "-t", pane_id)
+            # Bracketed paste needs one terminal update before Enter is accepted.
+            time.sleep(0.4)
+            checked("send-keys", "-t", pane_id, "Enter")
+            if after:
+                after()
+        finally:
+            tmux("delete-buffer", "-b", name)
 
 
 def server():
@@ -35,6 +112,7 @@ def panes():
         if p.get("cmd") in AGENTS:
             p["agent"] = p["cmd"]
             p["state"] = p.get("state") or "idle"
+            p["instance"] = process_instance(p.get("pid"))
             found.append(p)
     return found
 
@@ -43,6 +121,7 @@ def pane(pane_id):
     """One pane's FIELDS, whatever runs in it; None once it's gone."""
     out = tmux("display-message", "-p", "-t", pane_id, FORMAT).rstrip("\n")
     p = dict(zip(FIELDS, out.split("\t")))
+    p["instance"] = process_instance(p.get("pid"))
     return p if p.get("id") == pane_id else None
 
 
@@ -139,7 +218,7 @@ def squash(text):
 
 def shows(text, anchor):
     """Is `anchor` (say, the command being approved) visible in the screen text?"""
-    a = squash(anchor)[:40]
+    a = squash(anchor)
     return not a or a in squash(text)
 
 

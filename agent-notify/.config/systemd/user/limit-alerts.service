@@ -1,0 +1,13 @@
+[Unit]
+Description=Ping when a Claude or Codex 5h / weekly limit resets
+StartLimitIntervalSec=0
+# No network-online.target: the user manager doesn't have one; limit-alerts retries itself.
+
+[Service]
+ExecStart=%h/.local/bin/limit-alerts run
+Restart=always
+RestartSec=15
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

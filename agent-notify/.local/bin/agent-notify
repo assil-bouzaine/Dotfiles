@@ -22,6 +22,7 @@ import shlex
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -61,6 +62,7 @@ class Alert:
     wait: int = 0             # seconds to hold back, dropped if answered meanwhile
     verb: str = ""            # header wording if not the kind's usual one
     more: list = field(default_factory=list)   # rest of a long reply, one message each
+    origin: dict = field(default_factory=dict)
 
 
 # ---- Claude ----------------------------------------------------------------
@@ -68,13 +70,16 @@ class Alert:
 def claude(p):
     event = p.get("hook_event_name")
     if event == "PermissionRequest":      # remember the details; the alert itself comes
-        save_pending("claude", p)         # from the Notification Claude sends after ~6 s
+        if os.environ.get("TMUX_PANE"):
+            set_state("claude", "waiting", [os.environ["TMUX_PANE"]], p.get("session_id"), prompt=True)
+        if not DRY:
+            save_pending("claude", p)     # from the Notification Claude sends after ~6 s
         return None
     panes = [os.environ["TMUX_PANE"]] if os.environ.get("TMUX_PANE") else []
     project = project_of(p, "claude")
     if event == "Stop":
         last = p.get("last_assistant_message") or ""
-        set_state("claude", "done", panes)
+        set_state("claude", "done", panes, p.get("session_id"))
         desktop("claude", f"Claude finished · {project}",
                 markdown.preview(last) or "Task complete", "complete")
         first, *more = markdown.parts(last)
@@ -85,7 +90,7 @@ def claude(p):
     msg = p.get("message") or "Waiting for your input"
     kind = CLAUDE_KIND.get(ntype, "note")
     if kind != "note":
-        set_state("claude", "waiting", panes)
+        set_state("claude", "waiting", panes, p.get("session_id"), prompt=kind in ("approval", "question"))
     desktop("claude", f"Claude needs you · {project}", msg, "dialog-warning")
     if ntype in CLAUDE_DESKTOP_ONLY:
         note("claude", kind, f"not sent: {ntype} (desktop only)")
@@ -132,26 +137,26 @@ def pending(agent, p, msg):
 
 def codex(p):
     event, tool = p.get("hook_event_name"), p.get("tool_name") or ""
-    panes = codex_panes(p.get("cwd"))
+    panes = codex_panes(p.get("cwd"), p.get("session_id"))
     project = project_of(p, "codex")
     if event in ("UserPromptSubmit", "PostToolUse"):
-        set_state("codex", "working", panes)
+        set_state("codex", "working", panes, p.get("session_id"))
         return None
     if event == "Stop":
-        set_state("codex", "done", panes)
+        set_state("codex", "done", panes, p.get("session_id"))
         desktop("codex", "Codex finished a turn", f"{project}: The response is ready to review.")
         last = p.get("last_assistant_message")
         first, *more = markdown.parts(last) if isinstance(last, str) and last.strip() \
             else ["The response is ready to review."]
         return Alert("codex", "done", project, first, p, panes, more=more)
     if event == "PermissionRequest":
-        set_state("codex", "waiting", panes)
+        set_state("codex", "waiting", panes, p.get("session_id"), prompt=True)
         desktop("codex", "Codex needs approval",
                 f"{project}: Return to Codex to review an approval request.")
         kind, body, anchor = describe(tool, p.get("tool_input"))
         return Alert("codex", kind, project, body, p, panes, anchor, wait=CODEX_WAIT)
     if event == "PreToolUse" and QUESTION_TOOL.search(tool):
-        set_state("codex", "waiting", panes)
+        set_state("codex", "waiting", panes, p.get("session_id"), prompt=True)
         desktop("codex", "Codex needs your input", f"{project}: Codex has a question for you.")
         body, anchor = questions(p.get("tool_input"))
         return Alert("codex", "question", project, body or "Codex has a question for you.",
@@ -165,14 +170,18 @@ def many(inp):
     return f"has {len(qs)} questions" if isinstance(qs, list) and len(qs) > 1 else ""
 
 
-def codex_panes(cwd):
+def codex_panes(cwd, session=None):
     """Codex runs hooks in its background app-server, whose TMUX_PANE is wherever that server
     first started, so find the TUI's pane by its working directory instead."""
     live = [x for x in tmux.panes() if x["agent"] == "codex"]
-    own = os.environ.get("TMUX_PANE")
-    if any(x["id"] == own for x in live):
-        return [own]
-    return [x["id"] for x in live if cwd and x["path"] == cwd]
+    if session:
+        tagged = [x["id"] for x in live if x.get("session") == session]
+        if len(tagged) == 1:
+            return tagged
+    candidates = [x["id"] for x in live if cwd and x["path"] == cwd]
+    # The shared server's TMUX_PANE can point at an unrelated Codex. Ambiguity
+    # must produce an unrouted alert, never controls for the wrong conversation.
+    return candidates if len(candidates) == 1 else []
 
 
 # ---- what an approval or question is about ---------------------------------
@@ -296,11 +305,15 @@ def note(agent, kind, outcome):
         telegram.log(agent, kind, outcome)
 
 
-def set_state(agent, state, panes):
+def set_state(agent, state, panes, session=None, prompt=False):
     """working / waiting / done tag on the pane (tmux status bar, prefix Space)."""
     if DRY:
         return print(f"[tmux] {agent} {state} on {panes or 'no pane'}", file=sys.stderr)
     for pane in panes:
+        if session:
+            tmux.tmux("set", "-p", "-t", pane, "@agent_session", str(session))
+        if prompt:
+            tmux.tmux("set", "-p", "-t", pane, "@tg_prompt", uuid.uuid4().hex)
         env = dict(os.environ, TMUX_PANE=pane,
                    TMUX=os.environ.get("TMUX") or f"/tmp/tmux-{os.getuid()}/default")
         try:
@@ -349,17 +362,28 @@ def compose(a):
     texts = [text] + [f"<i>{n}/{total}</i>\n\n{m}" for n, m in enumerate(a.more, 2)]
     if foot := usage.footer(a.agent, a.payload):
         texts[-1] += "\n\n" + foot
+    live = {p["id"]: p for p in tmux.panes()}
     pane = a.panes[0] if a.panes else ""
+    p = live.get(pane)
+    if p and (p["agent"] != a.agent or (a.origin and not tmux.same(p, a.origin))):
+        p = None
+    if p and a.kind in ("approval", "question") and a.origin.get("prompt") \
+            and p.get("prompt") != a.origin["prompt"]:
+        p = None
     opts, buttons = [], None
-    if pane and a.kind in ("approval", "question"):
+    if p and a.kind in ("approval", "question"):
         screen = tmux.screen(pane)
         opts = tmux.choices(screen)
         if opts and not tmux.shows(screen, a.anchor):
             opts = []                        # the dialog on screen is some other one
         buttons = [[{"text": o, "callback_data": f"opt:{o.split('.')[0]}"}] for o in opts[:9]]
         buttons.append([{"text": "Show screen", "callback_data": "screen"}])
-    route = dict(pane=pane, agent=a.agent, server=tmux.server(), kind=a.kind,
-                 opts=opts, anchor=a.anchor[:120]) if pane else None
+    elif p and a.kind == "done":
+        buttons = [[{"text": "Continue", "callback_data": "ctl:continue"},
+                    {"text": "Show screen", "callback_data": "screen"}],
+                   [{"text": "Task controls", "callback_data": "ctl:refresh"},
+                    {"text": "Switch session", "callback_data": "sessions"}]]
+    route = dict(**tmux.identity(p), kind=a.kind, opts=opts, anchor=a.anchor) if p else None
     return texts, buttons, route
 
 
@@ -367,7 +391,9 @@ def still_waiting(a):
     """After the hold: is a Codex approval still unanswered? Its tag is still 'waiting'
     (an answer runs the tool and flips it), or a dialog is still on screen."""
     live = {x["id"]: x for x in tmux.panes()}
-    return any(pane in live and (live[pane]["state"] == "waiting" or tmux.choices(tmux.screen(pane)))
+    return any(pane in live and (not a.origin or tmux.same(live[pane], a.origin))
+               and (not a.origin.get("prompt") or live[pane].get("prompt") == a.origin["prompt"])
+               and (live[pane]["state"] == "waiting" or tmux.choices(tmux.screen(pane)))
                for pane in a.panes)
 
 
@@ -376,25 +402,18 @@ def deliver(a):
         return note(a.agent, a.kind, "not sent: bot not set up")
     if telegram.muted(a.agent):
         return note(a.agent, a.kind, "not sent: muted")
+    if a.panes:
+        p = next((p for p in tmux.panes() if p["id"] == a.panes[0] and p["agent"] == a.agent), None)
+        a.origin = tmux.identity(p) if p else {"instance": "unavailable"}
     detach()                               # the rest runs in the background
     if a.wait and a.panes:
         time.sleep(a.wait)
         if not still_waiting(a):
             return note(a.agent, a.kind, f"not sent: answered within {a.wait} s")
     texts, buttons, route = compose(a)
-    bot, mids = telegram.Bot(a.agent), []
-    try:
-        for n, text in enumerate(texts):   # only the first one buzzes the phone
-            last = n == len(texts) - 1
-            mids.append(bot.send(text, html_mode=True, buttons=buttons if last else None,
-                                 silent=n > 0))
-            if route:                      # a reply to any part reaches this session
-                telegram.remember(a.agent, mids[-1], **route)
-    except telegram.TelegramError as e:
-        sent = f" after #{', #'.join(map(str, mids))}" if mids else ""
-        return telegram.log(a.agent, a.kind, f"FAILED{sent}: {e}")
-    telegram.log(a.agent, a.kind, f"sent #{', #'.join(map(str, mids))}"
-                 + (f" with {len(route['opts'])} choices" if route and route["opts"] else ""))
+    telegram.queue_alert(a.agent, texts, buttons, route)
+    telegram.log(a.agent, a.kind, "queued for delivery")
+    telegram.flush_outbox(a.agent)
 
 
 def detach():

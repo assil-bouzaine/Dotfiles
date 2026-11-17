@@ -11,7 +11,7 @@ Everything lives in the `agent-notify` stow package. Bot tokens don't: they stay
 
 | When | Message | Buttons |
 |---|---|---|
-| A turn ends | **Claude finished** + project, then the whole final reply formatted for a phone (code blocks, tables as rows, `~` paths). Nothing is trimmed: a long reply is split over several messages marked 1/3, 2/3…, only the first one buzzes, the footer is on the last | none (reply to any part to continue) |
+| A turn ends | **Claude finished** + project, then the whole final reply formatted for a phone (code blocks, tables as rows, `~` paths). Nothing is trimmed: a long reply is split over several messages marked 1/3, 2/3…, only the first one buzzes, the footer is on the last | Continue, Show screen, Task controls, Switch session (reply to any part to continue) |
 | A permission prompt has waited 6 s | **Claude needs approval**: what it wants to run, edit, fetch or search, with the exact command or diff | the dialog's own choices + Show screen |
 | Claude asks a question (AskUserQuestion) | **Claude has a question** (or **has 3 questions**): every question with its options | the first question's options + Show screen; each tap brings the next question's buttons, then Submit |
 | Codex approval still open after 6 s | **Codex needs approval**: the command, or the files a patch touches + the diff | same as Claude |
@@ -25,16 +25,41 @@ reminder, which only repeats "finished" a minute later, plus auth and computer-u
 notices. If you answer a prompt at the PC within 6 s, the phone stays quiet:
 Claude waits 6 s itself, and for Codex agent-notify waits and checks.
 
+## Limit reset pings
+
+`limit-alerts` (systemd: `limit-alerts.service`) watches both agents' usage windows,
+asking the same endpoints their CLIs use every 2 minutes — every 20 seconds around a
+reset. Every used window is tracked, even below 100%: when it resets you get
+**Claude is back** / **Codex is back** with the other window's state. When a window
+runs out you also get **Claude: 5h limit used up** with the time it comes back.
+
+- It watches the **5h and the weekly** window. If the week is used up, the 5h reset
+  doesn't help, so the ping follows whichever resets last.
+- Failed reset deliveries stay pending until Telegram accepts them, including across
+  service restarts. Recent Codex rollout usage recovers resets missed during the last
+  two hours before the watcher was first started; a live check gates the alert.
+- One message per window, not per poll: a reset time that moves means the limit was
+  extended (a new message), and restarting the bot doesn't repeat what it already sent.
+- It reads the OAuth tokens the CLIs store and refreshes them when they expire,
+  writing the rotated token back to `~/.claude/.credentials.json` / `~/.codex/auth.json`
+  atomically and mode 600 — and only if the CLI hasn't refreshed meanwhile.
+- If a login really can't be refreshed, one message every 6 hours says what to run.
+  `tg-notify off` mutes it like every other alert.
+- One-way on purpose: the bots' update stream belongs to `tg-bridge`, so this never
+  competes with your replies.
+
 ## Answering from Telegram
 
-Each bot only talks to its own agent, and only from your chat id. Agents must run
-in tmux.
+Each bot starts with its own agent selected. `/list` can explicitly select a Claude
+or Codex session in either chat. Only your own account in your private chat is
+accepted. Agents must run in tmux.
 
 | You send | Happens |
 |---|---|
 | `/new` | starts a new session of this chat's agent: buttons for the folder, the model and the effort (below) |
 | a reply to an alert | typed into the session that sent it, then Enter |
-| a plain message | typed into that agent (the session that alerted last, if several are open) |
+| a plain message | typed into your selected session; another session finishing never changes the destination |
+| a screenshot or document, with an optional caption | saved privately on the PC and passed to the selected agent as a local attachment path plus your caption (up to 20 MB) |
 | tap a choice under an alert | that choice is pressed, if the same dialog is still on screen; the button then says "Answered: …". "Type something." opens the answer field: send your answer as the next message |
 | `/clear` · `/compact [notes]` | the agent's own command; you get back what it printed. `/compact` says "compacting", then again (with a buzz) when it's done |
 | `/model` | the agent's model menu as buttons (Codex: model, then effort); a tap picks it and the reply says what it changed to. Cancel closes the menu. `/model sonnet` sets it straight |
@@ -42,10 +67,13 @@ in tmux.
 | any other `/command` | typed into the agent as is (`/context`, `/usage`, `/resume` ...), what it prints comes back |
 | `/screen` | the bottom of the agent's screen, in monospace |
 | `/key 1` · `/key Escape` · `/key Down Enter` | raw keys (letters, digits, Enter, Escape, Tab, Space, BSpace, arrows, Home/End, PageUp/PageDown, C-x) |
-| `/list` | open agents and their state |
+| `/list` | clickable session picker, eight per page; your selection survives bridge restarts |
+| `/control` | a task card with Stop, Continue, Show screen, Refresh status and Switch session |
+| `/stop` | request an interrupt with Escape and cancel requests already waiting to be typed into that session |
+| `/continue` | send "Continue with the current task" once the selected agent is idle |
 | `/claude text` · `/codex text` | type into the other agent from either chat (`/claude /clear` works too) |
 
-The bridge keeps `/new`, `/screen`, `/key`, `/list`, `/help`, `/start`, `/claude`, `/codex`
+The bridge keeps `/new`, `/screen`, `/key`, `/list`, `/control`, `/stop`, `/continue`, `/help`, `/start`, `/claude`, `/codex`
 for itself; every other `/command` goes to the agent. (Codex's own `/new`, a fresh chat,
 is the same as its `/clear`; `/codex /new` still sends it.) Reply to an alert to aim it at
 that session when several are open. What sticks:
@@ -54,6 +82,29 @@ that session when several are open. What sticks:
   in `/resume`.
 - Codex: a pick in the `/model` menu is saved as the default; the typed forms
   (`/effort high`, `/model <name> --reasoning=<level>`) are for this session only.
+
+### Task cards and attachments
+
+After a message is sent, its task card names the agent, project, folder and window.
+While it is working, the card updates every 10 seconds with the terminal's working
+line, elapsed time and update time. It stops updating when the task finishes, needs
+an answer, or the session closes. `/control` opens a fresh card, including choices
+for an open prompt. Continue sends a new instruction; it does not resume a suspended
+operating-system process. Stop leaves an open approval or question for you to answer
+explicitly, and it does not kill the agent or tmux.
+
+Screenshots, image documents and other documents are downloaded into
+`~/.local/state/tg-notify/attachments/`, with unique filenames and mode 600. The
+agent receives the local path and your caption so its own tools can inspect the
+file. A missing caption asks it to inspect the image or file. Downloads have a
+20 MB cap, including when Telegram omits the file size. Files stay there for later
+reference; they are not automatically deleted. Voice transcription and outgoing
+artifact downloads are not part of this version.
+
+Downloads run outside the polling loop. Stop and callback buttons remain available
+while a file downloads. A pending message keeps the destination it had when it was
+received, even if you select another session meanwhile. Stop cancels pending input
+for that session across both bots; a new message sent after Stop can start work again.
 
 ### Starting a session: `/new`
 
@@ -96,9 +147,38 @@ Safety rules in the bridge:
   send next would go into the panel. `/key Escape` closes it.
 - A reply to an alert from a session that has since closed (or from before a reboot:
   tmux reuses pane ids) is refused instead of landing in some other pane.
+- Routes also check the foreground process start time, boot ID, known conversation
+  ID and a generation changed by `/clear`. Alerts from before this update have no
+  process identity: use `/list` or a fresh alert instead. If a selected session ends,
+  the bridge asks you to choose another rather than choosing one automatically.
+- `/claude text` and `/codex text` use the same prompt guards as ordinary messages.
+  Paste buffers are unique to each request; terminal actions are locked per pane
+  across both services and failures are reported instead of acknowledged as sent.
+- Prompt hooks record a request marker. A button cannot also confirm a replacement
+  prompt that appeared after its initial keypress. Prompt buttons expire after
+  10 minutes; `/control` refreshes them. Full command anchors are checked.
 - Only panes where `claude` / `codex` is the running command count, so a stale tag on
   a shell never gets typed into.
 - Messages older than 10 minutes are dropped, so nothing old fires after the PC was off.
+
+### Delivery and restart recovery
+
+Ordinary hook alerts now enter a SQLite outbox before sending. Transient network
+failures retry in the background, including after a bridge restart. Multipart
+replies checkpoint each delivered part; retries start at the first unfinished
+part. Expired or replaced approval prompts are discarded. Permanent Telegram
+errors (such as a blocked bot) are logged rather than retried forever.
+
+Incoming updates are recorded before dispatch and their cursor is persisted. A
+request interrupted by a crash is not automatically replayed: on restart a message
+asks you to check the screen before sending it again. This favors avoiding duplicate
+terminal actions. Telegram provides no idempotency key for outgoing messages, so a
+crash after Telegram accepts a message but before the local checkpoint can still
+duplicate that message. The queue starts after the hook has composed an alert; it
+cannot recover a hook killed before that point.
+
+The new state is `~/.local/state/tg-notify/bridge.sqlite3`. It holds selections,
+task cards, incoming receipts and the outbox; keep it across bridge restarts.
 
 ## Command line
 
@@ -111,6 +191,10 @@ tg-notify --bot codex test    # test message
 tg-notify "build done"        # message yourself from any script (Claude bot by default)
 long-job | tg-notify --md     # pipe Markdown in, sent formatted
 agent-notify --dry-run claude < payload.json   # show the alert a hook payload would make
+limit-alerts status           # what's used now, when it resets, what was announced
+limit-alerts check            # fetch once and print; sends and records nothing
+limit-alerts --dry-run        # one watcher pass, print the messages instead of sending
+limit-alerts test             # test message through both bots
 ```
 
 ## Files
@@ -121,19 +205,25 @@ agent-notify/                          (stow package)
   .local/bin/codex-notify -> agent-notify   name Codex's hooks.json calls (see below)
   .local/bin/tg-notify                 CLI: send, setup, on/off, status, test, log
   .local/bin/tg-bridge                 Telegram -> tmux, one per bot
+  .local/bin/limit-alerts              limit reset watcher + its status/check/test CLI
   .local/lib/agent-notify/agentnotify/
     telegram.py   bot config, sending (retries, falls back to plain text), routes, log
+    store.py      persistent selections, incoming receipts and outgoing alert queue
+    media.py      private downloads of phone screenshots and documents
     tmux.py       agent panes, screens, a dialog's choices (numbered or not), busy or not,
                   what a command printed, new windows (starts tmux if needed)
     launch.py     /new: recent folders, each agent's models and effort levels, the
                   command line
     markdown.py   reply Markdown -> Telegram HTML (parts(): whole reply, split per message)
     usage.py      the context / 5h / weekly footer
+    limits.py     live 5h / weekly windows from both CLIs, token refresh, what's blocking
   .config/systemd/user/tg-bridge@.service   tg-bridge@claude, tg-bridge@codex
+  .config/systemd/user/limit-alerts.service the reset watcher
 
 Outside the repo
   ~/.config/tg-notify/<bot>.env        TG_TOKEN + TG_CHAT (chmod 600), muted flags
-  ~/.local/state/tg-notify/            routes.<bot> (alert -> pane), log, pending/
+  ~/.local/state/tg-notify/            routes.<bot> (alert -> pane), log, pending/,
+                                       limits.json (what was already announced)
   ~/.claude/settings.json              hooks (below)
   ~/.codex/hooks.json                  hooks (below)
   ~/.claude/statusline-command.sh      saves ~/.cache/agent-usage/claude/<session>.json,
@@ -141,7 +231,34 @@ Outside the repo
   tmux package: agent-state            sets the pane tag both agents use
 ```
 
-## Setup on a new machine
+## Moving the bots to another machine: `bots`
+
+The Claude, Codex and tg-drop bots run on one machine at a time (Telegram gives a bot's
+messages to one reader only). `bots` moves all of them, with the same bots and tokens:
+
+1. On the machine they run on now: `bots move`. It asks for a passphrase, stops the four
+   services (`tg-drop`, `tg-bridge@claude`, `tg-bridge@codex`, `limit-alerts`), packs the
+   tokens, tg-drop's config + state (its place in the chat, so nothing is downloaded twice)
+   and tg-drop's code (a git bundle, so no GitHub login is needed) into
+   `~/bots-<host>-<date>.tar.gpg` (AES-256 with that passphrase) and sends the file to your
+   Claude chat.
+2. On the new machine (Arch): save that file to `~/Downloads`, then
+   ```bash
+   bash <(curl -fsSL https://raw.githubusercontent.com/assil-bouzaine/Dotfiles/main/agent-notify/.local/bin/bots) install
+   ```
+   It installs the packages, clones `~/.dotfiles` and stows `agent-notify` + `tmux`, installs
+   Claude Code and Codex if missing, restores the tokens (mode 600), clones tg-drop into
+   `~/Projects/tg-drop` and installs its service, adds the hooks below to both agents, starts
+   everything with linger, and says so in the Claude chat. Safe to re-run.
+3. By hand afterwards: log in to the agents (`claude` → `/login`, `codex login`), trust the
+   new hooks in Codex (`/hooks`), and for the remote's episode buttons load
+   `~/Projects/tg-drop/extension` in Brave.
+
+`bots off` / `bots on` / `bots status` stop, start and show the four services; `bots pack`
+only writes the file. To take the bots back: `bots off` on one machine, `bots on` on the other.
+If both run at once, the bridges fight over replies and tg-drop saves each file twice.
+
+## Setup on a new machine (by hand, new bots)
 
 1. `stow agent-notify` (`install.sh` does it). Needs python, tmux, libnotify; the
    sound needs libpulse (`paplay`) and sound-theme-freedesktop.
@@ -151,6 +268,8 @@ Outside the repo
    tg-notify --bot claude setup     # asks for the token; finds your chat id
    tg-notify --bot codex setup      # starts tg-bridge@codex, sends a test
    ```
+   Then `systemctl --user enable --now limit-alerts` for the reset pings (it reads the
+   CLIs' own tokens, so nothing else to configure).
 3. Claude Code hooks, in `~/.claude/settings.json` under `"hooks"`:
    ```json
    "Stop":              [{"hooks": [{"type": "command", "command": "~/.local/bin/agent-notify claude", "async": true}]}],
@@ -177,6 +296,11 @@ Outside the repo
   Codex: the hook may need review in Codex's `/hooks`.
 - **Replies don't arrive:** `journalctl --user -u tg-bridge@claude -f`, and the agent
   must run inside tmux.
+- **Old buttons say the session ended:** choose the session again with `/list`.
+  Old routes without a process identity are intentionally refused. If several
+  Codex sessions share one working directory and none has a known conversation tag,
+  their hook alerts remain unrouted until they can be identified; `/list` and
+  `/control` still let you explicitly control the pane you chose.
 - **Footer missing for Claude:** the status line hasn't written its snapshot yet
   (`~/.cache/agent-usage/claude/`); it appears after the first reply.
 - **No buttons on an approval:** the alert still arrives; the dialog on screen
@@ -190,6 +314,10 @@ Outside the repo
 - **`/new` didn't come up:** the bridge says why (the agent exited, never started, or
   isn't ready after a minute: see `/screen`), and `tg-notify log` has a "phone" line with
   the command it typed and the window. No `/new` in the `/` menu: restart the bridge.
+
+- **No limit ping?** `limit-alerts status` shows both windows and what was announced;
+  `journalctl --user -u limit-alerts -f` shows polls and send failures, and
+  `tg-notify log` has a `limit` line for each message.
 
 ## Why it's built this way
 
@@ -205,8 +333,11 @@ Outside the repo
 - **Buttons check the screen before pressing:** the choices and the command they're
   about must still be on screen, or nothing is pressed. If a digit only moves the
   cursor, Enter confirms it.
-- **Sends retry** on network errors (2, 4, 8 s), and bad markup is resent as plain
-  text, so an alert isn't lost to a hiccup.
+- **Sends retry** on network errors (2, 4, 8 s), then hook alerts remain in the
+  persistent outbox for background retries. Bad markup is resent as plain text.
+- **Limit pings use the CLIs' own OAuth tokens and endpoints**, not the public API —
+  neither vendor exposes usage there. The tokens are refreshed the way the CLIs do it,
+  so the watcher keeps working while you're away from the machine.
 - **Codex's effort is typed, not passed:** its only way to set it on the command line is
   `-c model_reasoning_effort=...`, and any `-c` makes Codex run without its shared
   background server ("requires embedded mode"). `-m` doesn't, so `/new` starts
@@ -216,3 +347,18 @@ Outside the repo
   bridge's service it would belong to it, and a bridge restart would kill tmux with every
   agent in it. It starts through an interactive zsh (with `TMUX` set so `~/.zshrc`
   doesn't try to attach), so it gets the same full PATH as one kitty starts.
+
+## Checking and loading changes
+
+From the dotfiles repository root:
+
+```sh
+python3 -B -m unittest discover -s agent-notify/tests -v
+systemctl --user restart tg-bridge@claude.service tg-bridge@codex.service
+```
+
+The checks use temporary state, mocked Telegram calls and isolated terminal
+processes. They never type into your running agents or send test messages to your
+bots. The library directory is stowed as a symlink, so no reinstall is needed;
+restarting the two bridges loads the new commands and controls. Hook subprocesses
+read the updated source on their next invocation.

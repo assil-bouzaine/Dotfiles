@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+# bots: tg-drop and the Claude / Codex Telegram bots, moved from one machine to another.
+# They run on one machine at a time: Telegram hands a bot's messages to one reader only.
+#
+#   On the machine they run on now:
+#     bots move               stop them here, pack the tokens + tg-drop's state into one
+#                             encrypted file, and send that file to your Claude chat
+#   On the new machine (Arch), with that file in ~/Downloads:
+#     bash <(curl -fsSL https://raw.githubusercontent.com/assil-bouzaine/Dotfiles/main/agent-notify/.local/bin/bots) install
+#
+#   bots pack                 only write the encrypted file (nothing stops)
+#   bots install [FILE]       set everything up from FILE (default: newest ~/Downloads/bots-*.tar.gpg)
+#   bots off | on | status    stop / start / show the four services on this machine
+
+set -euo pipefail
+
+DOTFILES_REPO=${DOTFILES_REPO:-https://github.com/assil-bouzaine/Dotfiles.git}
+TGDROP_ORIGIN=git@github.com:assil-bouzaine/tg-drop.git
+DOTFILES=${DOTFILES:-$HOME/.dotfiles}
+TGDROP=${TGDROP:-$HOME/Projects/tg-drop}
+HOST=$(uname -n)
+UNITS=(tg-drop tg-bridge@claude tg-bridge@codex limit-alerts)
+PKGS=(git stow python tmux zsh curl gnupg uv libnotify libpulse sound-theme-freedesktop
+      fd wl-clipboard playerctl wireplumber wtype)
+
+step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
+info() { printf '    %s\n' "$*"; }
+warn() { printf '\033[1;33m    ! %s\033[0m\n' "$*"; }
+die()  { printf '\033[1;31mbots: %s\033[0m\n' "$*" >&2; exit 1; }
+val()  { sed -n "s/^$2=//p" "$1" | head -1; }   # val FILE KEY: a KEY=value line's value
+
+TMP=
+cleanup() { [[ -n $TMP ]] && rm -rf "$TMP"; return 0; }
+trap cleanup EXIT
+
+# ---------------------------------------------------------------- on / off / status
+
+off() {
+    step "Stopping the bots on $HOST"
+    local u
+    for u in "${UNITS[@]}"; do
+        systemctl --user disable --now "$u" >/dev/null 2>&1 && info "stopped $u" || true
+    done
+}
+
+on() {
+    step "Starting the bots on $HOST"
+    systemctl --user daemon-reload
+    local u
+    for u in "${UNITS[@]}"; do
+        if systemctl --user cat "$u" >/dev/null 2>&1; then
+            systemctl --user enable --now "$u" >/dev/null 2>&1 && info "started $u" || warn "$u didn't start: journalctl --user -u $u"
+        else
+            warn "$u isn't installed here (bots install)"
+        fi
+    done
+    loginctl enable-linger >/dev/null 2>&1 || warn "loginctl enable-linger failed: they only run while you're logged in"
+    info "Make sure they're off on the other machine (bots off there)."
+}
+
+status() {
+    local u
+    echo "$HOST:"
+    for u in "${UNITS[@]}"; do
+        printf '  %-18s %s, %s\n' "$u" \
+            "$(systemctl --user is-active "$u" 2>/dev/null || true)" \
+            "$(systemctl --user is-enabled "$u" 2>/dev/null || echo 'not installed')"
+    done
+}
+
+# ---------------------------------------------------------------- pack / move
+
+ask_pass() {   # sets PASS; $1 = "new" asks twice
+    read -rsp "Passphrase for the bundle: " PASS; echo
+    [[ -n $PASS ]] || die "empty passphrase"
+    if [[ ${1:-} == new ]]; then
+        local again; read -rsp "Again: " again; echo
+        [[ $PASS == "$again" ]] || die "the passphrases differ"
+    fi
+}
+
+pack() {   # writes the bundle, prints its path in OUT
+    local f
+    for f in ~/.config/tg-notify/claude.env ~/.config/tg-notify/codex.env \
+             ~/.config/tg-drop/bot.env ~/.config/tg-drop/config.toml; do
+        [[ -f $f ]] || die "$f is missing: is this the machine the bots run on?"
+    done
+    [[ -d $TGDROP/.git ]] || die "no tg-drop repo at $TGDROP (set TGDROP=...)"
+    [[ -z $(git -C "$TGDROP" status --porcelain) ]] ||
+        warn "tg-drop has uncommitted changes: they are NOT in the bundle (only commits are)"
+
+    step "Packing"
+    TMP=$(mktemp -d); local b=$TMP/b
+    mkdir -p "$b/tg-notify" "$b/tg-drop"
+    cp ~/.config/tg-notify/{claude,codex}.env "$b/tg-notify/"
+    cp ~/.config/tg-drop/{bot.env,config.toml} "$b/tg-drop/"
+    info "tokens and tg-drop config"
+    local db=~/.local/state/tg-drop/state.db
+    if [[ -f $db ]]; then
+        # A consistent copy even while tg-drop runs. It carries the chat cursor, so the new
+        # machine doesn't download again what this one already saved.
+        python3 -c 'import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close()' \
+            "$db" "$b/tg-drop/state.db"
+        info "tg-drop state (where it is in the chat)"
+    fi
+    git -C "$TGDROP" bundle create "$b/tg-drop.git" --all 2>/dev/null
+    info "tg-drop code ($(git -C "$TGDROP" log -1 --format='%h %s' | cut -c1-60))"
+    printf '%s %s\n' "$HOST" "$(date -Is)" > "$b/FROM"
+
+    tar -C "$b" -czf "$TMP/b.tgz" .
+    [[ -n ${PASS:-} ]] || ask_pass new
+    OUT=${OUT:-$HOME/bots-$HOST-$(date +%Y%m%d-%H%M).tar.gpg}
+    gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 3 \
+        --symmetric --cipher-algo AES256 -o "$OUT" "$TMP/b.tgz" 3<<<"$PASS"
+    chmod 600 "$OUT"
+    info "wrote $OUT ($(du -h "$OUT" | cut -f1), encrypted with your passphrase)"
+}
+
+send_to_phone() {   # the bundle to the Claude chat, through the Bot API (works with the bridge stopped)
+    local env=~/.config/tg-notify/claude.env token chat
+    token=$(val "$env" TG_TOKEN); chat=$(val "$env" TG_CHAT)
+    [[ -n $token && -n $chat ]] || { warn "no token/chat in $env: copy $OUT over yourself"; return; }
+    # The URL (with the token) goes in through stdin, so it never shows in the process list.
+    if curl -sS --fail -o /dev/null -K - -F "chat_id=$chat" -F "document=@$OUT" \
+        -F "caption=Bots stopped on $HOST. On the new machine: save this file to ~/Downloads and run bots install." \
+        <<<"url = \"https://api.telegram.org/bot$token/sendDocument\""; then
+        info "sent to your Claude chat on Telegram"
+    else
+        warn "couldn't send it to Telegram: copy $OUT over yourself (USB, scp...)"
+    fi
+}
+
+move() {
+    ask_pass new   # before anything stops, so a typo doesn't leave the bots off
+    off
+    pack
+    send_to_phone
+    step "Done here"
+    info "On the new machine: save the file to ~/Downloads, then"
+    info "  bash <(curl -fsSL https://raw.githubusercontent.com/assil-bouzaine/Dotfiles/main/agent-notify/.local/bin/bots) install"
+    info "To take them back here instead: bots on"
+}
+
+# ---------------------------------------------------------------- install
+
+find_bundle() {
+    BUNDLE=${1:-}
+    if [[ -z $BUNDLE ]]; then
+        BUNDLE=$(ls -t ~/Downloads/bots-*.tar.gpg ~/bots-*.tar.gpg 2>/dev/null | head -1 || true)
+    fi
+    [[ -n $BUNDLE && -f $BUNDLE ]] || die "no bundle found. Run 'bots move' on the old machine, put the file in ~/Downloads, or: bots install FILE"
+    info "bundle: $BUNDLE"
+}
+
+unpack() {
+    TMP=$(mktemp -d); local b=$TMP/b; mkdir -p "$b"
+    ask_pass
+    gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 3 -d "$BUNDLE" 3<<<"$PASS" > "$TMP/b.tgz" 2>/dev/null ||
+        die "couldn't decrypt $BUNDLE (wrong passphrase?)"
+    tar -C "$b" -xzf "$TMP/b.tgz"
+    info "from $(cat "$b/FROM")"
+    B=$b
+}
+
+packages() {
+    step "Packages"
+    local missing
+    missing=$(pacman -T "${PKGS[@]}" || true)
+    if [[ -z $missing ]]; then info "all there"; return; fi
+    info "installing: $(echo $missing)"
+    # shellcheck disable=SC2086
+    sudo pacman -S --needed --noconfirm $missing
+}
+
+dotfiles() {
+    step "Dotfiles (agent-notify + tmux)"
+    if [[ -d $DOTFILES/.git ]]; then
+        git -C "$DOTFILES" pull --ff-only -q || warn "couldn't update $DOTFILES, using it as is"
+    else
+        git clone -q "$DOTFILES_REPO" "$DOTFILES"
+    fi
+    # Same as install.sh: anything in stow's way goes to ~/.dotfiles-backup/<time>/.
+    local backup=$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S) pkg src rel dst
+    for pkg in agent-notify tmux; do
+        while IFS= read -r -d '' src; do
+            rel=${src#"$DOTFILES/$pkg/"}; dst=$HOME/$rel
+            [[ -e $dst || -L $dst ]] || continue
+            [[ $(realpath -m "$dst") == "$(realpath -m "$src")" ]] && continue
+            mkdir -p "$backup/$(dirname "$rel")"; mv "$dst" "$backup/$rel"
+            info "backed up ~/$rel to $backup"
+        done < <(find "$DOTFILES/$pkg" \( -type f -o -type l \) -not -path '*/tests/*' -not -path '*/__pycache__/*' -print0)
+    done
+    mkdir -p "$HOME/.local/bin" "$HOME/.local/lib" "$HOME/.config/systemd/user"
+    stow -d "$DOTFILES" -t "$HOME" --restow agent-notify tmux
+    info "linked into ~/.local/bin, ~/.local/lib, ~/.config/systemd/user, ~/.tmux.conf"
+}
+
+agents() {
+    step "Claude Code + Codex"
+    export PATH=$HOME/.local/bin:$PATH
+    if command -v claude >/dev/null; then info "claude: there"
+    else curl -fsSL https://claude.ai/install.sh | bash; fi
+    if command -v codex >/dev/null; then info "codex: there"
+    else curl -fsSL https://chatgpt.com/codex/install.sh | sh; fi
+}
+
+secrets() {
+    step "Tokens + tg-drop state"
+    install -d -m 700 ~/.config/tg-notify ~/.config/tg-drop ~/.local/state/tg-drop
+    install -m 600 "$B"/tg-notify/*.env ~/.config/tg-notify/
+    install -m 600 "$B"/tg-drop/{bot.env,config.toml} ~/.config/tg-drop/
+    info "~/.config/tg-notify/{claude,codex}.env, ~/.config/tg-drop/{bot.env,config.toml}"
+    if [[ -f $B/tg-drop/state.db ]]; then
+        local db=~/.local/state/tg-drop/state.db
+        systemctl --user stop tg-drop 2>/dev/null || true
+        [[ -f $db ]] && mv "$db" "$db.bak-$(date +%Y%m%d-%H%M%S)"
+        rm -f "$db-wal" "$db-shm"
+        install -m 600 "$B/tg-drop/state.db" "$db"
+        info "tg-drop picks up in the chat where the old machine stopped"
+    fi
+}
+
+tgdrop() {
+    step "tg-drop"
+    if [[ -d $TGDROP/.git ]]; then
+        git -C "$TGDROP" pull -q --ff-only "$B/tg-drop.git" HEAD 2>/dev/null || warn "$TGDROP has its own changes, left as is"
+        info "$TGDROP: $(git -C "$TGDROP" log -1 --format='%h %s' | cut -c1-60)"
+    else
+        mkdir -p "$(dirname "$TGDROP")"
+        git clone -q "$B/tg-drop.git" "$TGDROP"
+        git -C "$TGDROP" remote set-url origin "$TGDROP_ORIGIN"
+        info "cloned into $TGDROP (origin: $TGDROP_ORIGIN)"
+    fi
+    uv tool install -q --reinstall "$TGDROP"
+    "$(uv tool dir --bin)/tg-drop" install | sed 's/^/    /'
+}
+
+hooks() {
+    step "Hooks (Claude + Codex call agent-notify)"
+    python3 - <<'PY'
+import json, os, re, shutil, tomllib
+from pathlib import Path
+
+home = Path.home()
+
+def merge(path, wanted, extra=None):
+    data = json.loads(path.read_text()) if path.exists() else {}
+    hooks = data.setdefault("hooks", {})
+    added = []
+    for event, entry in wanted.items():
+        cmd = entry["hooks"][0]["command"]
+        groups = hooks.setdefault(event, [])
+        if any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
+            continue
+        groups.append(entry)
+        added.append(event)
+    if added:
+        if path.exists():
+            shutil.copy2(path, path.with_name(path.name + ".bak-bots"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + "\n")
+    return added
+
+def claude(cmd, run_async=True):
+    h = {"type": "command", "command": cmd}
+    if run_async:
+        h["async"] = True
+    return {"hooks": [h]}
+
+notify, state = "~/.local/bin/agent-notify claude", "~/.local/bin/agent-state claude"
+added = merge(home / ".claude/settings.json", {
+    "Stop": claude(notify), "Notification": claude(notify), "PermissionRequest": claude(notify),
+    "UserPromptSubmit": claude(state + " working"), "PostToolUse": claude(state + " working"),
+    "SessionEnd": claude(state + " clear", run_async=False),
+})
+print("    Claude: " + (", ".join(added) + " added to ~/.claude/settings.json" if added else "already set"))
+
+def codex(cmd, matcher=None):
+    g = {"hooks": [{"command": cmd, "timeout": 5, "type": "command"}]}
+    if matcher:
+        g["matcher"] = matcher
+    return g
+
+py = f"/usr/bin/python3 {home}/.local/bin/codex-notify"
+added = merge(home / ".codex/hooks.json", {
+    "PermissionRequest": codex(py),
+    "PreToolUse": codex(py, "(^|[.:])request_user_input(_async)?$"),
+    "Stop": codex(py), "UserPromptSubmit": codex(py), "PostToolUse": codex(py),
+    "SessionEnd": codex(f"{home}/.local/bin/agent-state codex clear"),
+})
+print("    Codex: " + (", ".join(added) + " added to ~/.codex/hooks.json" if added else "already set"))
+
+cfg = home / ".codex/config.toml"
+text = cfg.read_text() if cfg.exists() else ""
+if tomllib.loads(text).get("features", {}).get("hooks") is not True:
+    if re.search(r"(?m)^hooks\s*=\s*false", text):
+        text = re.sub(r"(?m)^hooks\s*=\s*false", "hooks = true", text, count=1)
+    elif re.search(r"(?m)^\[features\]\s*$", text):
+        text = re.sub(r"(?m)^\[features\]\s*$", "[features]\nhooks = true", text, count=1)
+    else:
+        text = text.rstrip("\n") + ("\n\n" if text else "") + "[features]\nhooks = true\n"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(text)
+    print("    Codex: hooks turned on in ~/.codex/config.toml")
+PY
+}
+
+install_all() {
+    [[ $EUID -ne 0 ]] || die "run as your user, not root"
+    command -v pacman >/dev/null || die "this installer is for Arch Linux"
+    command -v gpg >/dev/null || sudo pacman -S --needed --noconfirm gnupg
+    step "Bundle"
+    find_bundle "${1:-}"
+    unpack
+    packages
+    dotfiles
+    agents
+    secrets
+    tgdrop
+    hooks
+    on
+    "$HOME/.local/bin/tg-notify" --bot claude "Bots now run on $HOST." >/dev/null 2>&1 || true
+    step "Done. Still by hand:"
+    info "1. Log in to the agents if they're new here: run claude (/login), then: codex login"
+    info "2. Codex only runs hooks you trusted: open codex, type /hooks, trust the agent-notify ones"
+    info "3. Check: bots status; tg-notify test; send a file to the drop bot"
+    if command -v brave >/dev/null; then
+        info "4. Remote's episode buttons: brave://extensions, Developer mode, Load unpacked: $TGDROP/extension"
+        info "   and add --silent-debugger-extension-api to ~/.config/brave-flags.conf"
+    fi
+    info "The file $BUNDLE holds your tokens (encrypted). Delete it when all works."
+}
+
+case ${1:-} in
+    move)    move ;;
+    pack)    pack ;;
+    install) shift; install_all "${1:-}" ;;
+    on)      on ;;
+    off)     off ;;
+    status)  status ;;
+    *)       sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

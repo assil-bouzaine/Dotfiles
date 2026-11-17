@@ -7,6 +7,7 @@ State (safe to delete)  ~/.local/state/tg-notify/routes.<bot>   which tmux pane 
                         ~/.local/state/tg-notify/log            one line per alert
 """
 import html
+import fcntl
 import json
 import os
 import re
@@ -15,6 +16,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 
 BOTS = ("claude", "codex")
@@ -119,17 +121,26 @@ def state_dir(sub=""):
 
 # ---- routes: which pane sent which alert (tg-bridge reads them) ------------
 
+@contextmanager
+def file_lock(name):
+    fd = os.open(state_dir() / (name + ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(fd, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+
 def remember(bot, message_id, **info):
     path = state_dir() / f"routes.{bot}"
-    with open(path, "a") as f:
-        f.write(json.dumps({"mid": message_id, "t": int(time.time()), **info}) + "\n")
-    _trim(path, keep=300, max_bytes=150_000)
+    with file_lock(f"routes.{bot}"):
+        with open(path, "a") as f:
+            f.write(json.dumps({"mid": message_id, "t": int(time.time()), **info}) + "\n")
+        _trim(path, keep=300, max_bytes=150_000)
 
 
 def routes(bot):
     """Recorded alerts, newest first."""
     try:
-        lines = (STATE / f"routes.{bot}").read_text().splitlines()
+        with file_lock(f"routes.{bot}"):
+            lines = (STATE / f"routes.{bot}").read_text().splitlines()
     except OSError:
         return []
     out = []
@@ -145,13 +156,68 @@ def route(bot, message_id):
     return next((r for r in routes(bot) if r.get("mid") == message_id), None)
 
 
+def queue_alert(bot, texts, buttons=None, route=None):
+    from .store import Store
+    return Store(state_dir() / "bridge.sqlite3").enqueue(bot, dict(
+        texts=texts, buttons=buttons, route=route, next=0))
+
+
+def flush_outbox(bot):
+    """Both hooks and the bridge can drain it; one sender per bot owns the lock."""
+    from .store import Store
+    from . import tmux
+    fd = os.open(state_dir() / f"outbox-{bot}.lock", os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(fd, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        store, sender = Store(state_dir() / "bridge.sqlite3"), Bot(bot)
+        for job in store.pending(bot):
+            payload, route = job["payload"], job["payload"].get("route")
+            if muted(bot):
+                continue
+            if route and route.get("kind") in ("approval", "question"):
+                p = next((p for p in tmux.panes() if p["id"] == route["pane"]), None)
+                if time.time() - job["created"] > 600 or not p or not tmux.same(p, route) \
+                        or str(route.get("server")) != tmux.server() \
+                        or (route.get("prompt") and p.get("prompt") != route["prompt"]) \
+                        or (not route.get("opts") and p.get("state") != "waiting") \
+                        or (route.get("opts") and not tmux.dialog_is(
+                            p["id"], route["opts"], route.get("anchor") or "")):
+                    store.remove(job["id"])
+                    log(bot, "outbox", "expired prompt discarded")
+                    continue
+            try:
+                while payload["next"] < len(payload["texts"]):
+                    n = payload["next"]
+                    last = n == len(payload["texts"]) - 1
+                    mid = sender.send(payload["texts"][n], html_mode=True,
+                                      buttons=payload.get("buttons") if last else None, silent=n > 0)
+                    if route:
+                        remember(bot, mid, **route)
+                    payload["next"] += 1
+                    store.checkpoint(job["id"], payload)
+                store.remove(job["id"])
+                log(bot, "outbox", "alert delivered")
+            except TelegramError as e:
+                if e.code in (400, 401, 403):
+                    store.remove(job["id"])
+                    log(bot, "outbox", f"FAILED permanently: {e}")
+                else:
+                    store.retry(job["id"], job["attempts"])
+                    log(bot, "outbox", f"retry queued: {e}")
+                break
+
+
 # ---- log: one line per alert, for "why didn't I get that?" ------------------
 
 def log(bot, kind, outcome):
     try:
-        with open(state_dir() / "log", "a") as f:
-            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {bot:<6}  {kind:<8}  {outcome}\n")
-        _trim(STATE / "log", keep=500, max_bytes=100_000)
+        with file_lock("log"):
+            with open(state_dir() / "log", "a") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {bot:<6}  {kind:<8}  {outcome}\n")
+            _trim(STATE / "log", keep=500, max_bytes=100_000)
     except OSError:
         pass
 
