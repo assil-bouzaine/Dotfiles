@@ -1,0 +1,17 @@
+# Fonts. The font picker (SUPER + CTRL + F) lists every Nerd Font below.
+
+ttf-jetbrains-mono-nerd   # default
+ttf-cascadia-code-nerd
+ttf-firacode-nerd
+otf-geist-mono-nerd
+ttf-victor-mono-nerd
+otf-commit-mono-nerd
+ttf-martian-mono-nerd
+ttf-0xproto-nerd
+ttf-lilex-nerd
+ttf-hack-nerd
+ttf-ibmplex-mono-nerd
+ttf-adwaitamono-nerd
+adwaita-fonts             # Adwaita Sans: the bar, cards and dock
+noto-fonts                # Noto Sans: GTK apps
+noto-fonts-emoji

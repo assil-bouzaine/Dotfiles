@@ -1,0 +1,3 @@
+# install.sh copies config.toml into ~/.codex (Codex rewrites that file), so nothing here is linked.
+\.stow-local-ignore
+^/config\.toml

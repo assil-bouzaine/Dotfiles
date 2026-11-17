@@ -1,0 +1,34 @@
+# Command-line basics. One package per line; text after # is ignored.
+# install.sh installs every packages/*.txt except aur.txt and vscode.txt with pacman.
+
+base-devel
+git
+stow                      # links home/ into ~
+curl
+wget
+rsync
+unzip
+7zip
+gnupg                     # the encrypted bots bundle
+
+zsh
+zsh-autosuggestions       # oh-my-zsh plugin (linked from /usr/share by install.sh)
+zsh-syntax-highlighting   # same
+tmux
+gvim                      # vim built with +clipboard ("+y in .vimrc)
+
+fzf                       # Ctrl+F folder search, vim fuzzy finder
+fd                        # makes Ctrl+F fast
+ripgrep                   # vim :grep and the fzf file list
+jq                        # Hyprland scripts and the Claude status line
+lua                       # luac checks the Hyprland config
+github-cli                # gh, also git's GitHub login
+fnm                       # Node versions (.zshrc runs "fnm env")
+uv                        # Python tools (tg-drop)
+zoxide
+yazi
+mandoc                    # man pages
+pkgfile
+smartmontools
+exfatprogs
+caligula                  # write ISOs to USB sticks

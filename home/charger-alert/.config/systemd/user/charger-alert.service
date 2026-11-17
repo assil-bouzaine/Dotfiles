@@ -1,0 +1,10 @@
+[Unit]
+Description=Warn while the charger is unplugged
+
+[Service]
+ExecStart=%h/.local/bin/charger-alert
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

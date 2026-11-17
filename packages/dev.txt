@@ -1,0 +1,7 @@
+# Programming languages and libraries.
+
+rust
+clang
+jdk17-openjdk             # Java 17 (TLauncher, Android builds)
+gdal                      # geospatial data (thesis)
+resvg                     # SVG to PNG

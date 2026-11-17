@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Warns while the charger is unplugged, until it's plugged back in.
+
+POWER_SUPPLY_DIR=${POWER_SUPPLY_DIR:-/sys/class/power_supply}
+AC=
+BAT=
+for supply in "$POWER_SUPPLY_DIR"/*; do
+    [ -d "$supply" ] || continue
+    supply_type=$(cat "$supply/type" 2>/dev/null)
+    if [ -z "$AC" ] && [ "$supply_type" = Mains ] && [ -f "$supply/online" ]; then
+        AC=$supply/online
+    elif [ -z "$BAT" ] && [ "$supply_type" = Battery ] \
+        && [ "$(cat "$supply/scope" 2>/dev/null)" != Device ] \
+        && [ -f "$supply/capacity" ]; then
+        BAT=$supply/capacity
+    fi
+done
+
+if [ -z "$AC" ] || [ -z "$BAT" ]; then
+    echo "charger-alert: no laptop battery/charger found, nothing to watch" >&2
+    exit 0
+fi
+
+SOUND=/usr/share/sounds/freedesktop/stereo/dialog-warning.oga
+PLUG_SOUND=/usr/share/sounds/freedesktop/stereo/power-plug.oga
+REMIND_EVERY=60   # seconds between repeated warnings while unplugged
+POLL=2            # seconds between checks
+
+id=0
+last_warn=0
+prev=$(cat "$AC")
+
+close_notification() {
+    [ "$id" -gt 0 ] && gdbus call --session --dest org.freedesktop.Notifications \
+        --object-path /org/freedesktop/Notifications \
+        --method org.freedesktop.Notifications.CloseNotification "$id" >/dev/null 2>&1
+    id=0
+}
+
+warn() {
+    local pct
+    pct=$(cat "$BAT" 2>/dev/null)
+    id=$(notify-send -u critical -a "Power" -i battery-caution \
+        -p -r "$id" "⚠ Charger unplugged" "Running on battery (${pct}%). Plug the charger back in.")
+    paplay "$SOUND" 2>/dev/null &
+    last_warn=$(date +%s)
+}
+
+trap 'close_notification; exit 0' INT TERM
+
+# If already unplugged at startup, warn immediately
+[ "$prev" = 0 ] && warn
+
+while sleep "$POLL"; do
+    cur=$(cat "$AC")
+    if [ "$cur" = 0 ]; then
+        if [ "$prev" = 1 ] || [ $(( $(date +%s) - last_warn )) -ge "$REMIND_EVERY" ]; then
+            warn
+        fi
+    elif [ "$prev" = 0 ]; then
+        close_notification
+        notify-send -u low -a "Power" -i battery-good-charging -t 3000 "🔌 Charger connected"
+        paplay "$PLUG_SOUND" 2>/dev/null &
+    fi
+    prev=$cur
+done

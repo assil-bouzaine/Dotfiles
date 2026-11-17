@@ -1,0 +1,9 @@
+# From the AUR, installed with yay (install.sh installs yay first).
+
+brave-bin
+hex-bin                   # voice to text, hold SUPER + Z
+hyprland-preview-share-picker-git   # screen sharing picker
+spotify
+visual-studio-code-bin
+t3code-nightly-bin
+zotero-bin

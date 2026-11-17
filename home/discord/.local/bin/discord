@@ -1,0 +1,10 @@
+#!/bin/sh
+# Discord launcher with the Intel HD 620 H.264 workaround (added 2026-10-31).
+# Shadows /usr/bin/discord in PATH, and the rofi desktop entry
+# (~/.local/share/applications/discord.desktop) calls it too.
+# --disable_accelerated_h264_decode keeps streams off the VA-API decoder, which
+# stalls after ~15 frames. It must come before any "--": Chromium ignores
+# switches after it. discord-guard covers the restart after self-updates,
+# which drops command-line flags.
+systemd-cat -t discord-guard "$HOME/.local/bin/discord-guard" || true
+exec /usr/bin/discord --disable_accelerated_h264_decode "$@"

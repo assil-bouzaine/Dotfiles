@@ -1,0 +1,205 @@
+#!/usr/bin/python3
+"""Keep Discord's H.264 decode workaround working across Discord self-updates.
+
+Background (Discord 1.0.168, Intel HD 620, added 2026-10-31):
+- Screen shares decoded by the VA-API (iHD) H.264 decoder stall after ~15
+  frames, so ~/.local/bin/discord launches Discord with
+  --disable_accelerated_h264_decode.
+- After installing an update, Discord restarts into the new version with NO
+  arguments (app.asar _relaunchToNewHost: spawn(hostExePath, [])), so the
+  first session after every update would run without that flag.
+- Each Discord version also reads "chromiumSwitches" from settings.json at
+  startup. The web client resets that key on every connect, so the switch
+  can't live there permanently. But Discord's settings.save() refuses to
+  write once the file has changed on disk, so a copy added while an update is
+  waiting survives until that restart. (It also means Discord won't save its
+  own settings changes for the rest of that pre-update session.)
+
+Each run:
+1. Puts the switch into settings.json if Discord isn't running or a newer
+   installed version is waiting to take over.
+2. Makes discord_asset_cache/openh264 writable again if it isn't. A read-only
+   copy broke call encryption entirely on 2026-10-31.
+3. Warns once per version if a new Discord build no longer contains the
+   switch name, and once per GPU process if Discord runs without the switch.
+
+Runs from ~/.local/bin/discord before each launch and from
+discord-guard.path whenever ~/.config/discord changes.
+Usage: discord-guard [--dry-run]
+"""
+import contextlib
+import json
+import mmap
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+SWITCH = "disable_accelerated_h264_decode"
+HOME = Path.home()
+ROOT = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "discord"
+STATE = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "discord-guard"
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "discord-guard"
+DRY_RUN = "--dry-run" in sys.argv[1:]
+# GPU-process flags that mean hardware decoding is off anyway.
+NO_HW_FLAGS = ("--disable-gpu", "--disable-gpu-compositing", "--use-gl=disabled")
+
+
+def log(msg):
+    print(f"discord-guard: {'[dry-run] ' if DRY_RUN else ''}{msg}", flush=True)
+
+
+def parse_version(app_dir):
+    m = re.fullmatch(r"app-(\d+(?:\.\d+)+)", app_dir.name)
+    return tuple(int(x) for x in m.group(1).split(".")) if m else None
+
+
+def fmt(version):
+    return ".".join(map(str, version))
+
+
+def installed_hosts(root):
+    """[(version, dir)] of installed Discord versions, oldest first."""
+    hosts = []
+    for d in root.glob("app-*"):
+        v = parse_version(d)
+        if v and (d / "Discord").is_file():
+            hosts.append((v, d))
+    return sorted(hosts)
+
+
+def discord_processes(root):
+    """[(pid, argv, version)] of processes running a Discord binary under root."""
+    prefix = f"{root}/app-"
+    procs = []
+    for p in Path("/proc").iterdir():
+        if not p.name.isdigit():
+            continue
+        try:
+            exe = os.readlink(p / "exe")
+            raw = (p / "cmdline").read_bytes()
+        except OSError:
+            continue
+        if exe.startswith(prefix) and exe.endswith("/Discord"):
+            # Chromium rewrites process titles into one space-joined string, so
+            # split on whitespace too (none of the flags we look for has spaces).
+            argv = raw.replace(b"\0", b" ").decode(errors="replace").split()
+            procs.append((int(p.name), argv, parse_version(Path(exe).parent)))
+    return procs
+
+
+def needs_preseed(newest, running_versions):
+    """True when the next Discord start might not come from our launcher."""
+    if not running_versions:
+        return True  # whatever starts Discord next reads settings.json first
+    return newest > max(running_versions)  # update waiting: argument-less restart
+
+
+def add_switch(settings_path):
+    """Add SWITCH to chromiumSwitches in settings.json. True if it was added."""
+    try:
+        data = json.loads(settings_path.read_text())
+    except (OSError, ValueError):
+        return False  # missing, or caught mid-write by Discord; next run retries
+    if not isinstance(data, dict):
+        return False
+    switches = data.get("chromiumSwitches")
+    if isinstance(switches, list):
+        switches = dict.fromkeys(switches, True)
+    elif not isinstance(switches, dict):
+        switches = {}
+    if SWITCH in switches:  # Discord appends every key, whatever its value
+        return False
+    switches[SWITCH] = True
+    data["chromiumSwitches"] = switches
+    if DRY_RUN:
+        return True
+    mode = settings_path.stat().st_mode & 0o777
+    fd, tmp = tempfile.mkstemp(dir=settings_path.parent, prefix=".settings.json.")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)  # same layout as Discord
+        os.chmod(tmp, mode)
+        os.replace(tmp, settings_path)  # atomic: Discord never sees half a file
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+        raise
+    return True
+
+
+def fix_openh264_dir(root):
+    d = root / "discord_asset_cache" / "openh264"
+    if d.is_dir() and not os.access(d, os.W_OK):
+        log(f"{d} is read-only; making it writable so Discord can manage it")
+        if not DRY_RUN:
+            os.chmod(d, d.stat().st_mode | 0o700)
+
+
+def binary_has_switch(binary):
+    with open(binary, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+        return m.find(SWITCH.encode()) != -1
+
+
+def notify_once(marker, summary, body):
+    if marker.exists():
+        return
+    log(f"{summary}. {body}")
+    if DRY_RUN:
+        return
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    with contextlib.suppress(OSError):
+        subprocess.run(["notify-send", "-a", "Discord", "-i", "discord", "-u", "critical",
+                        summary, body], check=False, timeout=10)
+
+
+def main():
+    hosts = installed_hosts(ROOT)
+    if not hosts:
+        return
+    newest, newest_dir = hosts[-1]
+    procs = discord_processes(ROOT)
+    running = {v for _, argv, v in procs
+               if v and not any(a.startswith("--type=") for a in argv)}
+    if DRY_RUN:
+        log(f"installed: {', '.join(fmt(v) for v, _ in hosts)}; "
+            f"running: {', '.join(fmt(v) for v in sorted(running)) or 'none'}")
+
+    fix_openh264_dir(ROOT)
+
+    if needs_preseed(newest, running):
+        why = f"update {fmt(newest)} is waiting" if running else "Discord isn't running"
+        if add_switch(ROOT / "settings.json"):
+            log(f"added {SWITCH} to settings.json ({why})")
+        elif DRY_RUN:
+            log(f"settings.json already has {SWITCH} ({why})")
+
+    checked = STATE / f"checked-{fmt(newest)}"
+    if not checked.exists():
+        if not binary_has_switch(newest_dir / "Discord"):
+            notify_once(STATE / f"missing-{fmt(newest)}",
+                        f"Discord {fmt(newest)} dropped the H.264 workaround",
+                        f"Its binary no longer contains {SWITCH}. If friends' screen "
+                        "shares freeze after a few frames, the workaround needs redoing.")
+        elif DRY_RUN:
+            log(f"Discord {fmt(newest)} still supports {SWITCH}")
+        if not DRY_RUN:
+            STATE.mkdir(parents=True, exist_ok=True)
+            checked.touch()
+
+    for pid, argv, _ in procs:
+        if ("--type=gpu-process" in argv and f"--{SWITCH}" not in argv
+                and not any(a in NO_HW_FLAGS for a in argv)):
+            notify_once(RUNTIME / f"warned-gpu-{pid}",
+                        "Discord is running without the H.264 fix",
+                        "Friends' screen shares may freeze. Quit Discord from the tray "
+                        "and reopen it with SUPER+D.")
+        elif DRY_RUN and "--type=gpu-process" in argv:
+            log(f"GPU process {pid} has --{SWITCH}")
+
+
+if __name__ == "__main__":
+    main()

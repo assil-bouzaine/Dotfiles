@@ -1,0 +1,10 @@
+# Shared git settings. Machine-local ones (user.email, anything written by
+# "git config --global") go to ~/.gitconfig, which is not in this repo.
+[user]
+	name = assil-bouzaine
+[credential "https://github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential

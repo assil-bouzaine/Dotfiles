@@ -1,0 +1,3 @@
+# settings.json is merged into ~/.claude/settings.json by install.sh (Claude rewrites that file).
+\.stow-local-ignore
+^/settings\.json

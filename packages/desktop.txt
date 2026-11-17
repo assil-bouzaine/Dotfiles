@@ -1,0 +1,86 @@
+# The Hyprland desktop and every program its configs and scripts call.
+# GPU video drivers are not listed: install.sh picks them for the GPU it finds.
+
+# Compositor, login, session
+hyprland
+hypridle
+hyprlock
+hyprsunset                # night light (moon button on the bar)
+awww                      # wallpaper daemon
+ly                        # login screen
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
+polkit-kde-agent          # password prompts for pkexec and settings apps
+gnome-keyring
+qt5-wayland
+qt6-wayland
+xdg-utils
+xdg-user-dirs
+
+# Bar, cards, dock, notifications, launcher
+waybar
+quickshell
+qrencode                  # Wi-Fi QR code in the network card
+imagemagick               # wallpaper picker thumbnails
+swaync
+libnotify
+rofi
+python
+python-gobject            # the bar's workspace buttons find app icons
+
+# Terminal, task manager
+kitty
+btop
+htop
+
+# Files and images (KDE apps, styled outside Plasma)
+dolphin
+gwenview
+ark
+ffmpegthumbs
+kdegraphics-thumbnailers
+archlinux-xdg-menu        # "Open with" menus outside Plasma
+plasma-integration        # Breeze look for Qt apps (QT_QPA_PLATFORMTHEME=kde)
+breeze-icons
+breeze-cursors
+adw-gtk-theme             # GTK side of the theme (adw-gtk3-dark)
+gvfs
+
+# Audio
+pipewire
+pipewire-alsa
+pipewire-jack
+pipewire-pulse
+wireplumber
+pavucontrol
+libpulse                  # paplay: alert sounds
+sound-theme-freedesktop
+playerctl
+
+# Network, Bluetooth, power
+networkmanager
+nm-connection-editor
+bluez
+bluez-utils
+blueman
+power-profiles-daemon     # power button on the bar
+brightnessctl
+
+# Screenshots, clipboard, typing
+grim
+slurp
+wl-clipboard
+wtype                     # Hex types the dictated text
+
+# Video and audio codecs
+gst-libav
+gst-plugin-pipewire
+gst-plugins-bad
+gst-plugins-base
+gst-plugins-ugly
+
+# Builds the floating window titlebars plugin
+cmake
+
+# Compressed swap in RAM (system/etc/systemd/zram-generator.conf)
+zram-generator

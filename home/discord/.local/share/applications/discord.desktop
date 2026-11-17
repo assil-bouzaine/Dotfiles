@@ -1,0 +1,15 @@
+[Desktop Entry]
+# Local override of /usr/share/applications/discord.desktop (added 2026-10-31).
+# Runs ~/.local/bin/discord, which adds --disable_accelerated_h264_decode
+# (Intel VA-API H.264 decoding stalls screen shares on this HD 620) and runs
+# discord-guard first. See the comments in those two scripts.
+Name=Discord
+StartupWMClass=discord
+Comment=All-in-one voice and text chat for gamers that's free, secure, and works on both your desktop and phone.
+GenericName=Internet Messenger
+Exec=/home/mclovin/.local/bin/discord --url -- %u
+Icon=discord
+Type=Application
+Categories=Network;InstantMessaging;
+MimeType=x-scheme-handler/discord;
+Path=/usr/bin

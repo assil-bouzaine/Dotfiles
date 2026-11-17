@@ -1,0 +1,9 @@
+# Everyday apps from the official repos (the AUR ones are in aur.txt).
+
+discord                   # started through ~/.local/bin/discord (home/discord)
+thunderbird
+libreoffice-still
+okular                    # PDFs
+kate                      # text editor
+mpv
+celluloid

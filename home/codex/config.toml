@@ -1,0 +1,13 @@
+# Codex defaults. install.sh copies this to ~/.codex/config.toml only when that
+# file doesn't exist yet (Codex rewrites it: trusted folders, hook hashes).
+model = "gpt-6.1-sol"
+model_reasoning_effort = "max"
+
+[tui]
+status_line = ["five-hour-limit", "weekly-limit", "context-used", "model-with-reasoning"]
+notifications = true
+notification_condition = "always"
+notification_method = "auto"
+
+[features]
+hooks = true
