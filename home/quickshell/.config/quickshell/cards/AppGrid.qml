@@ -255,7 +255,10 @@ Scope {
                         sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
                         source: root.dock ? root.dock.iconSource(cell.modelData.icon) : ""
                         fillMode: Image.PreserveAspectFit
-                        asynchronous: true
+                        // Not asynchronous: after a Quickshell hot reload (any edit in
+                        // this folder) async loads through the icon provider come back
+                        // blank, and the grid lost every icon (2026-11-17).
+                        asynchronous: false
                         smooth: true
                         mipmap: true
                     }

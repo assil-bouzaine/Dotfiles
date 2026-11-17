@@ -376,7 +376,9 @@ PanelWindow {
             sourceSize: Qt.size(window.iconSize * 2, window.iconSize * 2)
             source: window.dock && appSlot.modelData ? window.dock.iconFor(appSlot.modelData) : ""
             fillMode: Image.PreserveAspectFit
-            asynchronous: true
+            // Not asynchronous: async icon loads come back blank after a
+            // Quickshell hot reload (see AppGrid.qml).
+            asynchronous: false
             smooth: true
             mipmap: true
             opacity: appSlot.launching ? appSlot.pulse : (appSlot.windowCount > 0 && !appSlot.allMinimized ? 1 : window.idleOpacity)
