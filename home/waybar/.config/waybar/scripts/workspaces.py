@@ -99,10 +99,12 @@ def hyprctl(what):
 
 
 def write_state():
-    workspaces = {ws["id"]: ws for ws in hyprctl("workspaces")}
+    # Special workspaces (scratchpads like special:magic) carry no "id" in
+    # 0.57's JSON; they aren't ws-N buttons, so skip anything without one.
+    workspaces = {ws["id"]: ws for ws in hyprctl("workspaces") if "id" in ws}
     monitors = hyprctl("monitors")
-    focused = next((m["activeWorkspace"]["id"] for m in monitors if m["focused"]), None)
-    visible = {m["activeWorkspace"]["id"] for m in monitors}
+    focused = next((m["activeWorkspace"].get("id") for m in monitors if m["focused"]), None)
+    visible = {m["activeWorkspace"].get("id") for m in monitors}
 
     lines = []
     for n in WORKSPACES:
@@ -125,7 +127,7 @@ def write_state():
     # windows were opened
     apps = []
     for c in hyprctl("clients"):
-        if (c["workspace"]["id"] == focused and c["mapped"] and not c["hidden"]
+        if (c["workspace"].get("id") == focused and c["mapped"] and not c["hidden"]
                 and c["class"] not in IGNORED_CLASSES):
             app = app_info(c["class"])
             if app not in apps:
@@ -192,7 +194,7 @@ def main():
     while True:
         try:
             listen()
-        except (OSError, ValueError):
+        except Exception:  # never die: a crash here freezes the ws buttons
             pass
         time.sleep(1)  # Hyprland restarting or socket gone: retry
 
