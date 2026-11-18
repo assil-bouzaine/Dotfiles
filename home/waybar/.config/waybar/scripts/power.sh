@@ -12,7 +12,7 @@ case $1 in
 toggle)
     [[ $profile == performance ]] && next=balanced || next=performance
     powerprofilesctl set "$next"
-    pkill -RTMIN+10 -x waybar
+    "${0%/*}/bar-signal" 10   # not a bare pkill: see bar-signal
     ;;
 *)
     if [[ $profile == performance ]]; then

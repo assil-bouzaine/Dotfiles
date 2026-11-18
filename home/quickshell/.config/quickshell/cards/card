@@ -1,9 +1,9 @@
 #!/bin/bash
 # Open / close one of the desktop's cards:
-#   card netcard | bluetooth | agents | apps | themes | fonts | keys
+#   card menu | netcard | bluetooth | agents | apps | themes | fonts | keys
 # They share one Quickshell instance (shell.qml next to this file), normally
 # started at login; if it isn't running, the first press starts it.
-name=${1:?usage: card netcard|bluetooth|agents|apps|themes|fonts|keys}
+name=${1:?usage: card menu|netcard|bluetooth|agents|apps|themes|fonts|keys}
 case $name in
     apps) target=dock ;;      # the dock's app grid
     *)    target=$name ;;

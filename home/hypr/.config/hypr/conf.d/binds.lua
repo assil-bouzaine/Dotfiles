@@ -3,13 +3,12 @@
 
 local terminal    = "kitty"
 local fileManager = "dolphin"
-local menu        = "rofi -show drun"
+local menu        = "~/.config/quickshell/cards/card menu" -- the Arch menu (bar logo): apps, settings, power
 
 local mainMod = "SUPER" -- Sets "Windows" key as main modifier
 
--- Drop-down cards shared with the waybar buttons (apps, Wi-Fi, Bluetooth).
+-- Drop-down cards shared with the waybar buttons (Arch menu, Wi-Fi, Bluetooth).
 -- Pressing the key again while a card is open closes it.
-local cards = "pkill -x rofi || "
 
 hl.bind(mainMod .. " + W",      hl.dsp.exec_cmd("brave"), { description = "Open Brave browser" })
 hl.bind(mainMod .. " + RETURN", hl.dsp.exec_cmd(terminal), { description = "Open terminal (kitty)" })
@@ -17,7 +16,7 @@ hl.bind(mainMod .. " + Q",      hl.dsp.window.close(), { description = "Close th
 hl.bind(mainMod .. " + M",      hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"), { description = "Log out (exit Hyprland)" })
 hl.bind(mainMod .. " + F",      hl.dsp.exec_cmd(fileManager), { description = "Open file manager (Dolphin)" })
 hl.bind(mainMod .. " + SHIFT + V", hl.dsp.window.float({ action = "toggle" }), { description = "Toggle floating for the active window" })
-hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd(cards .. "rofi -show drun -theme ~/.config/waybar/scripts/launcher.rasi"), { description = "Open app launcher" })
+hl.bind(mainMod .. " + D",      hl.dsp.exec_cmd(menu), { description = "Open the Arch menu (type to find an app or setting)" })
 hl.bind(mainMod .. " + N",      hl.dsp.exec_cmd("~/.config/quickshell/cards/card netcard"), { description = "Open / close the network card" })
 hl.bind(mainMod .. " + B",      hl.dsp.exec_cmd("~/.config/quickshell/cards/card bluetooth"), { description = "Open / close the Bluetooth card" })
 hl.bind(mainMod .. " + SHIFT + SPACE", hl.dsp.exec_cmd("~/.config/waybar/scripts/bar-toggle.sh"), { description = "Show / hide the top bar" })

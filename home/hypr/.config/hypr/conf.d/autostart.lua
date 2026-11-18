@@ -8,6 +8,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("waybar") -- top bar, config in ~/.config/waybar (stow package: waybar)
     hl.exec_cmd("qs -c cards -d") -- dock, app grid, theme/font pickers, bar cards (~/.config/quickshell/cards)
     hl.exec_cmd("~/.config/quickshell/wallpicker/wallctl.py restore") -- last wallpaper picked with SUPER + CTRL + SPACE
+    hl.exec_cmd("~/.config/waybar/scripts/awake.sh on") -- stay awake starts on (bar mug, SUPER + CTRL + I turns it off)
     hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")
     hl.exec_cmd("/usr/lib/polkit-kde-authentication-agent-1") -- password prompts for pkexec / system settings
     -- xwaylandvideobridge removed 2026-11-17: Discord captures through its own

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# bar-signal SIGNAL: send waybar a signal, but only once it listens for it.
+#   bar-signal 11      SIGRTMIN+11, what a custom module's "signal": 11 waits for
+#   bar-signal USR1    any signal name works too
+# Waybar sets its handlers at the start of main(). A real-time signal (or
+# SIGUSR1/2) that arrives before that, while it is still loading its
+# libraries, kills it outright: that is those signals' default action. Right
+# after a reboot waybar loads slowly, and `awake.sh on` from autostart.lua
+# signalled it 0.1 s in, so the bar died at every login (2026-11-18).
+# A waybar that doesn't listen yet will read the state itself when it starts.
+
+sig=$1
+[[ $sig =~ ^[0-9]+$ ]] && sig="RTMIN+$sig"
+num=$(kill -l "$sig" 2>/dev/null) || { echo "bar-signal: unknown signal '$1'" >&2; exit 2; }
+
+for pid in $(pgrep -x waybar); do
+    caught=$(awk '/^SigCgt:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)
+    held=$(awk '/^SigBlk:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)
+    [[ -n $caught ]] || continue
+    # Caught (or blocked, so it waits) means it can't kill this waybar.
+    if (( ((16#$caught | 16#${held:-0}) >> (num - 1)) & 1 )); then
+        kill -s "$sig" "$pid" 2>/dev/null
+    fi
+done
+exit 0

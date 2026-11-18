@@ -59,10 +59,13 @@
 
     // ── Left ─────────────────────────────────────────────────────────────
 
+    // The Arch menu (quickshell/cards/MenuCard.qml, also SUPER + D): apps,
+    // appearance, toggles, capture, setup, power. Right-click: a terminal (as Omarchy).
     "custom/launcher": {
         "format": "",
         "tooltip": false,
-        "on-click": "pkill -x rofi || rofi -show drun -theme ~/.config/waybar/scripts/launcher.rasi"
+        "on-click": "~/.config/quickshell/cards/card menu",
+        "on-click-right": "kitty"
     },
 
     // Workspaces: see scripts/workspaces.py for why this isn't hyprland/workspaces.
@@ -285,7 +288,8 @@
         "on-click-right": "~/.config/quickshell/cards/agentsctl.py launch claude"
     },
 
-    // Stay awake: no lock / screen off / sleep while on (SUPER + CTRL + I), see scripts/awake.sh
+    // Stay awake (Omarchy's mug): no lock / screen off / sleep while on. On after
+    // every login (autostart.lua); click or SUPER + CTRL + I turns it off. See scripts/awake.sh
     "custom/awake": {
         "exec": "~/.config/waybar/scripts/awake.sh",
         "return-type": "json",

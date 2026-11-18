@@ -8,11 +8,13 @@
 //   ThemePicker.qml  themes (SUPER + CTRL + T)
 //   FontPicker.qml   fonts (SUPER + CTRL + F)
 //   KeysCard.qml     every keybind, search and run (SUPER + K)
-// Opened / closed by ./card <netcard|bluetooth|agents|apps|themes|fonts|keys>.
+//   MenuCard.qml     the Arch menu: apps, settings, toggles, power (bar Arch logo, SUPER + D)
+// Opened / closed by ./card <menu|netcard|bluetooth|agents|apps|themes|fonts|keys>.
 // Nothing polls while closed.
 import Quickshell
 
 ShellRoot {
+    MenuCard {}
     NetCard {}
     BtCard {}
     AgentsCard {}

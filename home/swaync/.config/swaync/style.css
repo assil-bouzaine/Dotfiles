@@ -1,43 +1,64 @@
 @import url("../../.local/state/theme/swaync.css");
 
-/* swaync: small, quiet toasts in the same style as the waybar pills and the
- * rofi cards (waybar/.config/waybar/scripts/card.rasi). Loaded on top of
- * /etc/xdg/swaync/style.css, so only the differences live here. */
+/* swaync in the "Layered" look, picked 2026-11-18 from ~/prototypes/bar-dropdowns
+ * to match the Arch menu (quickshell/cards/MenuCard.qml):
+ * a glass panel (Hyprland blurs the wallpaper behind the swaync layers, see
+ * hypr/conf.d/rules.lua), notifications as soft cards with an icon tile, the
+ * first action as the primary button, and one app's notifications stacked
+ * ("notification-grouping" in config.json). Colours come from the theme engine
+ * (the import above). Loaded on top of /etc/xdg/swaync/style.css, so only the
+ * differences live here. Old look: ~/.local/share/bar-dropdowns-backup-2026-11-18. */
 
 :root {
-  --notification-icon-size: 34px;
+  --notification-icon-size: 32px;
+  --notification-group-icon-size: 16px;
   --border-radius: 14px;
   --notification-shadow: none;
   --font-size-body: 12px;
   --font-size-summary: 13px;
+  --hover-tranistion: background 150ms ease-out;
+  --hover-transition: background 150ms ease-out;
+  --group-collapse-tranistion: opacity 200ms ease-out;
+  --group-collapse-transition: opacity 200ms ease-out;
+  --card: var(--noti-bg-darker);
+  --card-hover: var(--noti-bg-hover);
 }
 
-/* ── Popup toasts ───────────────────────────────────────────────────── */
+/* ── Cards (popups and the panel) ───────────────────────────────────── */
 
 .notification-row .notification-background {
-  padding: 4px 6px 2px;
+  padding: 4px 6px;
 }
 
 .notification-row .notification-background .notification {
+  border: none;
+  border-radius: 14px;
   box-shadow: none;
 }
 
 .notification-row .notification-background .notification .notification-default-action {
-  padding: 8px 10px;
+  padding: 12px;
+  border-radius: 14px;
 }
 
 .notification-row .notification-background .notification .notification-default-action:hover {
-  background: var(--noti-bg-hover);
+  background: var(--card-hover);
 }
 
+/* the icon tile */
 .notification-row .notification-background .notification .notification-default-action .notification-content .image {
-  margin: 0 10px 0 0;
-  border-radius: 9px;
+  margin: 0 11px 0 0;
+  border-radius: 10px;
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content .app-icon {
-  -gtk-icon-size: 14px;
-  margin: 0 10px 0 0;
+  -gtk-icon-size: 12px;
+  margin: 0 11px 0 0;
+}
+
+.notification-row .notification-background .notification .notification-default-action .notification-content .text-box .app-name {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content .text-box .summary {
@@ -49,7 +70,13 @@
   font-size: 11px;
   font-weight: 500;
   color: var(--text-color-disabled);
-  margin-right: 22px;
+  margin-right: 24px;
+  transition: opacity 120ms ease-out;
+}
+
+/* the close button takes the timestamp's place on hover */
+.notification-row:hover .notification-background .notification .notification-default-action .notification-content .text-box .time {
+  opacity: 0;
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content .text-box .body {
@@ -62,84 +89,218 @@
 }
 
 .notification-row .notification-background .notification .notification-default-action .notification-content progressbar progress {
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  background: var(--accent);
   border-radius: 4px;
 }
 
-/* Close button only shows on hover */
-.close-button {
-  min-width: 20px;
-  min-height: 20px;
-  margin-top: 6px;
-  margin-right: 6px;
-  opacity: 0;
-  transition: opacity 150ms ease;
+/* actions: a row of buttons under the text (a homogeneous GtkFlowBox, one
+ * child per action), the first one is the primary */
+.notification-row .notification-background .notification .notification-alt-actions {
+  padding: 0 8px 10px 51px;
 }
-.notification-row:hover .close-button {
+
+.notification-row .notification-background .notification .notification-action {
+  margin: 0 4px;
+  padding: 0;
+}
+
+.notification-row .notification-background .notification .notification-action > button {
+  min-height: 28px;
+  margin: 0;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--card-hover);
+  color: var(--text-color);
+  font-size: 12px;
+  box-shadow: none;
+}
+
+.notification-row .notification-background .notification .notification-action > button:hover {
+  background: alpha(var(--text-color), 0.14);
+}
+
+.notification-row .notification-background .notification .notification-alt-actions > flowboxchild:first-child button {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.notification-row .notification-background .notification .notification-alt-actions > flowboxchild:first-child button:hover {
+  background: shade(var(--accent), 1.08);
+}
+
+/* critical: a red tint instead of a louder box */
+.notification-row .notification-background .notification.critical {
+  background: alpha(var(--red), 0.12);
+}
+
+.notification-row .notification-background .notification.critical .notification-default-action .notification-content .text-box .summary {
+  color: var(--red);
+}
+
+/* close: a small round button, only on hover */
+.close-button {
+  min-width: 22px;
+  min-height: 22px;
+  margin-top: 8px;
+  margin-right: 8px;
+  border-radius: 100%;
+  background: var(--noti-close-bg);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.close-button:hover {
+  background: var(--noti-close-bg-hover);
+}
+
+.notification-row:hover .close-button,
+.notification-group:hover .notification-group-close-button .close-button {
   opacity: 1;
 }
 
-/* Action buttons (e.g. "Reply", "Open") as small pills */
-.notification-row .notification-background .notification .notification-action > button {
-  margin: 4px;
-  padding: 4px 10px;
-  border-radius: 8px;
-  border: none;
-  background: var(--noti-bg-darker);
-  color: var(--text-color);
-}
-.notification-row .notification-background .notification .notification-action > button:hover {
-  background: var(--noti-bg-hover);
+/* ── Popups ─────────────────────────────────────────────────────────── */
+
+.floating-notifications .notification-row .notification-background .notification {
+  background: rgba(var(--noti-bg), 0.86);
+  border: 1px solid var(--noti-border-color);
 }
 
-/* Critical: a red accent instead of a louder box */
-.notification-row .notification-background .notification.critical {
-  border-color: alpha(var(--red), 0.5);
-}
-
-/* ── Control center (bell click) ────────────────────────────────────── */
+/* ── Panel (bell click) ─────────────────────────────────────────────── */
 
 .control-center {
+  background: rgba(var(--noti-bg), 0.80);
   border: 1px solid var(--noti-border-color);
-  border-radius: 16px;
+  border-radius: 18px;
   box-shadow: none;
-  padding: 8px;
+  padding: 6px;
+}
+
+.control-center .control-center-list .notification {
+  background: var(--card);
+  box-shadow: none;
+}
+
+.control-center .control-center-list .notification .notification-default-action:hover,
+.control-center .control-center-list .notification .notification-action:hover {
+  background-color: transparent;
+}
+
+.control-center .control-center-list .notification .notification-default-action:hover {
+  background-color: var(--card-hover);
+}
+
+.control-center .control-center-list-placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.widget {
+  margin: 2px 6px;
+  padding: 6px 6px 2px;
 }
 
 .widget-title > label {
   font-size: 14px;
   font-weight: 700;
+  color: var(--text-color);
 }
 
 .widget-title > button {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 8px;
+  min-height: 28px;
+  padding: 0 11px;
   border: none;
-  background: var(--noti-bg-darker);
+  border-radius: 9px;
+  background: var(--card-hover);
   color: var(--text-color);
+  font-size: 12px;
   box-shadow: none;
 }
+
 .widget-title > button:hover {
-  background: var(--noti-bg-hover);
+  background: alpha(var(--text-color), 0.14);
+}
+
+.widget-dnd {
+  padding-top: 0;
+  padding-bottom: 6px;
 }
 
 .widget-dnd > label {
-  font-size: 13px;
-}
-.widget-dnd > switch {
-  border-radius: 10px;
-  background: var(--noti-bg-darker);
-  border: none;
-}
-.widget-dnd > switch:checked {
-  background: linear-gradient(45deg, var(--accent), var(--accent2));
-}
-.widget-dnd > switch slider {
-  border-radius: 8px;
-  background: var(--text-color);
+  font-size: 12px;
+  color: var(--muted);
 }
 
-.control-center .control-center-list .notification {
+.widget-dnd > switch {
+  min-width: 28px;
+  min-height: 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--card-hover);
+}
+
+.widget-dnd > switch:checked {
+  background: var(--accent);
+}
+
+.widget-dnd > switch slider {
+  min-width: 12px;
+  min-height: 12px;
+  margin: 2px;
+  border-radius: 999px;
+  background: var(--text-color);
   box-shadow: none;
+}
+
+.widget-dnd > switch:checked slider {
+  background: var(--on-accent);
+}
+
+/* ── Stacks: one app's notifications, collapsed until clicked ───────── */
+
+.notification-group .notification-group-headers {
+  margin: 6px 14px 2px;
+}
+
+.notification-group .notification-group-headers .notification-group-header {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.notification-group .notification-group-buttons {
+  margin: 4px 10px 0;
+}
+
+.notification-group .notification-group-buttons button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  box-shadow: none;
+}
+
+.notification-group .notification-group-buttons button:hover {
+  background: var(--card-hover);
+}
+
+.notification-group .notification-group-close-button .close-button {
+  margin: 10px 14px;
+}
+
+/* the cards under the top one peek out below it; they need a solid fill so
+ * the stack doesn't look muddy through the glass */
+.notification-group.collapsed .notification-row .notification {
+  background-color: mix(rgb(var(--noti-bg)), var(--text-color), 0.07);
+}
+
+.notification-group.collapsed:hover .notification-row:not(:only-child) .notification {
+  background-color: mix(rgb(var(--noti-bg)), var(--text-color), 0.10);
+}
+
+.notification-group.collapsed.not-expanded {
+  opacity: 0.5;
 }

@@ -224,10 +224,21 @@ hl.layer_rule({
     ignore_alpha = 0.3,
 })
 
--- Bluetooth/network settings and htop opened from the bar float in the middle
+-- The Arch menu (Quickshell, "archmenu") and swaync's panel and popups are
+-- glass ("Layered" look, 2026-11-18): blur the wallpaper behind them.
+-- xray blur (look.lua) keeps this cheap.
+hl.layer_rule({
+    name  = "dropdowns-blur",
+    match = { namespace = "^(archmenu|swaync-control-center|swaync-notification-window)$" },
+
+    blur         = true,
+    ignore_alpha = 0.3,
+})
+
+-- Bluetooth/network settings, htop and the Arch menu's Update terminal float in the middle
 hl.window_rule({
     name  = "bar-popups-floating",
-    match = { class = "^(blueman-manager|nm-connection-editor|bar-htop)$" },
+    match = { class = "^(blueman-manager|nm-connection-editor|bar-htop|bar-update)$" },
 
     float  = true,
     center = true,
