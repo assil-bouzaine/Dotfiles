@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
+import "AppFilter.js" as AppFilter
 
 // Every app on one grid (SUPER + ALT + SPACE, or the dock's first button), like
 // Omarchy 4.5's app grid. Type to search, arrows move, Enter starts the app,
@@ -42,7 +43,7 @@ Scope {
         const seen = {}
         let list = []
         for (const e of DesktopEntries.applications.values) {
-            if (e.noDisplay || seen[e.id]) continue
+            if (!AppFilter.isUserApp(e) || seen[e.id]) continue
             seen[e.id] = true
             list.push(e)
         }

@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
+import "AppFilter.js" as AppFilter
 
 // The Arch menu: the drop-down behind the bar's Arch logo (and SUPER + D).
 //
@@ -156,7 +157,7 @@ Scope {
         }
         const seen = {}
         for (const a of DesktopEntries.applications.values) {
-            if (!a || a.noDisplay || seen[a.id]) continue
+            if (!AppFilter.isUserApp(a) || seen[a.id]) continue
             seen[a.id] = true
             const s = root.score(a.name, [a.genericName, a.comment, a.id].concat(a.keywords || []).join(" "), q)
             if (s > 0) found.push({ s: s, row: root.appRow(a) })
