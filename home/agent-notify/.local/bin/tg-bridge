@@ -3,23 +3,20 @@
 
   tg-bridge claude|codex     poll that bot; run as the systemd user unit tg-bridge@<bot>
 
-Only messages from your own chat count, and only fresh ones (10 min), so nothing old gets
-typed in after the PC was off. Agents must run in tmux.
+Send text, a photo, or a document to your selected tmux session. Add a caption to tell
+the agent what to do with a file. Reply to an alert to reach the session that sent it.
 
-  reply to an alert          typed into the session that sent it, then Enter
-  plain message              typed into this agent (the session that alerted last)
-  buttons on an alert        press that choice, if the same dialog is still on screen
-  /new                       start a new session: pick the folder, model and effort,
-                             or say them: /new radar opus high (/new ~/code/app sonnet)
-  /clear · /compact [notes]  clear or compact the agent's context
-  /model · /effort           pick from buttons, or set it straight: /model sonnet, /effort high
-  any other /command         typed into the agent as is: /context, /usage, /resume ...
-  /screen                    the bottom of the agent's screen
-  /key 1 · /key Escape · /key Down Enter      press keys: a letter or digit, Enter,
-                             Escape, Tab, Space, BSpace, Up, Down, Left, Right, Home, End,
-                             PageUp, PageDown, C-c (any C-x / M-x)
-  /list                      open agents and what they're doing
-  /claude text · /codex text type into the other agent from either chat (/claude /clear too)
+/list — see open sessions and choose where messages go
+/new — start a session in this bot's agent and pick a folder, model and effort
+/control — see task status and controls
+/stop — interrupt the selected task and cancel its queued input
+/continue — ask an idle agent to continue its task
+/screen — read the bottom of the terminal
+/key Escape — press a key, or a sequence like /key Down Enter
+
+Tap a choice under a question to answer it. Send /model or /effort to choose a setting.
+Agent commands such as /compact, /clear and /usage work here too.
+Use /claude text or /codex text to address that agent from either chat.
 """
 import html
 import json
@@ -63,6 +60,7 @@ CONTROL_BUTTONS = [[{"text": "Stop", "callback_data": "ctl:stop"},
                     {"text": "Continue", "callback_data": "ctl:continue"}],
                    SCREEN_BUTTON + [{"text": "Refresh status", "callback_data": "ctl:refresh"}],
                    [{"text": "Switch session", "callback_data": "sessions"}]]
+STATE_LABELS = {"working": "Working", "waiting": "Waiting for your answer", "done": "Finished"}
 _STORE = None
 _CONTEXT = threading.local()
 
@@ -177,8 +175,7 @@ def terminal_action(fn):
     @wraps(fn)
     def locked(p, *args, **kwargs):
         with tmux.input_lock(p["id"]):
-            ensure_live(p)
-            return fn(p, *args, **kwargs)
+            return fn(ensure_live(p), *args, **kwargs)
     return locked
 
 
@@ -192,8 +189,7 @@ def typing_allowed(r, screen, p=None):
 
 def type_into(p, text, state="working", typing=None, require_idle=False):
     def validate():
-        if "_input_epoch" in p and p["_input_epoch"] != input_epoch(p):
-            raise RuntimeError("That pending request was cancelled by Stop. Send it again to restart it.")
+        check_pending(p)
         current = ensure_live(p)
         screen = tmux.screen(p["id"])
         if require_idle and (current["state"] == "working" or tmux.busy(screen)):
@@ -213,6 +209,11 @@ def type_into(p, text, state="working", typing=None, require_idle=False):
 
 def input_epoch(p):
     return storage().get("shared", f"cancel:{p['id']}:{p['instance']}", 0)
+
+
+def check_pending(p):
+    if "_input_epoch" in p and p["_input_epoch"] != input_epoch(p):
+        raise RuntimeError("That pending request was cancelled by Stop. Send it again to restart it.")
 
 
 def send_text(p, r, text, mid, require_idle=False):
@@ -244,11 +245,12 @@ def session_picker(mid=None, page=0):
     page = max(0, min(page, (len(items) - 1) // 8))
     choices = [tmux.identity(p) for p in items[page * 8:(page + 1) * 8]]
     buttons = []
+    active = storage().get(BOT, "active_agent", BOT)
+    selected = live.of(storage().get(BOT, f"selected:{active}"))
     for i, p in enumerate(items[page * 8:(page + 1) * 8]):
-        selected = storage().get(BOT, f"selected:{p['agent']}")
-        active = storage().get(BOT, "active_agent", BOT)
-        mark = "Selected · " if p["agent"] == active and selected and live.of(selected) == p else ""
-        label = f"{mark}{p['agent'].capitalize()} · {launch.label(p['path'])} · {p['where']}"
+        mark = "✓ " if p is selected else ""
+        state = STATE_LABELS.get(p["state"], "Ready")
+        label = f"{mark}{p['agent'].capitalize()} · {state} · {p['where']} · {launch.label(p['path'])}"
         buttons.append([{"text": label[:90], "callback_data": f"session:{i}"}])
     nav = []
     if page:
@@ -265,31 +267,48 @@ def session_picker(mid=None, page=0):
     return sent
 
 
-def status_text(p, started=None, sent=False):
+def panel_view(p, previous, sent=False):
     screen = tmux.screen(p["id"])
+    up = on_prompt(p, screen=screen)
     busy = tmux.busy(screen)
-    prompt = tmux.menu(screen)[0] or tmux.select_list(screen)
-    state = "Waiting for your answer" if prompt or p["state"] == "waiting" else "Working" if busy or p["state"] == "working" \
-        else "Finished" if p["state"] == "done" else "Ready"
+    state = STATE_LABELS.get(p["state"], "Ready")
+    if up or p["state"] == "waiting":
+        state = STATE_LABELS["waiting"]
+    elif busy:
+        state = STATE_LABELS["working"]
+    working = state == STATE_LABELS["working"]
+    now = time.time()
+    stopped = previous.get("stopped")
+    # Older stopped cards only stored a start time. Their duration is unknown.
+    started = previous.get("started") if previous.get("watching") or stopped is not None else None
+    if sent or (working and (not previous.get("watching") or started is None)):
+        started = now
+        stopped = None
+    if working:
+        stopped = None
+    elif started is not None and stopped is None:
+        stopped = now
     lines = [heading(p, ""),
              f"<code>{html.escape(launch.tilde(p['path']))}</code> · {html.escape(p['where'])}"]
     if sent:
         lines.append("Message sent.")
     lines.append(f"<b>{state}</b>")
-    if prompt:
+    if up:
         lines.append("<pre>" + html.escape(screen[-2000:]) + "</pre>")
     if busy:
         lines.append(html.escape(busy[:180]))
-    if started:
-        seconds = max(0, int(time.time() - started))
+    if started is not None:
+        seconds = max(0, int((stopped if stopped is not None else now) - started))
         lines.append(f"Elapsed: {seconds // 60}m {seconds % 60}s")
-    lines.append(f"Updated {time.strftime('%H:%M:%S')}")
-    return "\n".join(lines), state
+    lines.append(f"Updated {time.strftime('%H:%M:%S', time.localtime(now))}")
+    return "\n".join(lines), up, dict(started=started, stopped=stopped, watching=working)
 
 
-def panel_buttons(p):
-    up = on_prompt(p)
-    return (prompt_buttons(up) + CONTROL_BUTTONS if up else CONTROL_BUTTONS), up
+def panel_history(p, route, monitor):
+    previous = monitor.get("route") or {}
+    if previous.get("server") == route.get("server") and tmux.same(p, previous):
+        return monitor
+    return {}
 
 
 def remember_panel(mid, p, up):
@@ -301,15 +320,17 @@ def remember_panel(mid, p, up):
 
 def control_panel(p, mid=None, sent=False):
     p = ensure_live(p)
-    started = time.time() if sent or p["state"] == "working" else None
-    text, state = status_text(p, started, sent)
-    buttons, up = panel_buttons(p)
+    route, key = tmux.identity(p), f"monitor:{p['id']}"
+    previous = panel_history(p, route, storage().get(BOT, key) or {})
+    text, up, timing = panel_view(p, previous, sent)
+    buttons = (prompt_buttons(up) if up else []) + CONTROL_BUTTONS
     posted = say(text, mid, html_mode=True, buttons=buttons, silent=True)
     if posted:
         remember_panel(posted, p, up)
-        storage().set(BOT, f"monitor:{p['id']}",
-                      dict(mid=posted, route=tmux.identity(p), started=started,
-                           watching=state == "Working"))
+        with telegram.file_lock(f"{BOT}-{key}"):
+            current = storage().get(BOT, key) or {}
+            if posted > current.get("mid", 0):
+                storage().set(BOT, key, dict(mid=posted, route=route, **timing))
     return posted
 
 
@@ -335,22 +356,55 @@ def continue_task(p, r, mid):
         return send_text(p, r, "Continue with the current task.", mid, require_idle=True)
 
 
+def monitor_due(item):
+    retry_at = item.get("retry_at", 0)
+    return (item.get("watching") or retry_at) and retry_at <= time.time()
+
+
+def refreshed_buttons(mid, up):
+    if not up:
+        return CONTROL_BUTTONS
+    # Edits keep the message's original route. A different or expired prompt
+    # needs fresh buttons, and other messages may own a pending typed answer.
+    original = telegram.route(BOT, mid) or {}
+    fields = ("kind", "prompt", "opts", "anchor")
+    fresh = time.time() - original.get("t", 0) <= MAX_AGE
+    if fresh and all(original.get(k) == up.get(k) for k in fields):
+        return prompt_buttons(up) + CONTROL_BUTTONS
+    return [[btn("Show choices", "ctl:open")]] + CONTROL_BUTTONS
+
+
+def refresh_panel(mid, route, automatic=False):
+    key = f"monitor:{route['pane']}"
+    with telegram.file_lock(f"{BOT}-{key}"):
+        monitor = storage().get(BOT, key) or {}
+        current = monitor.get("mid") == mid
+        if automatic and not (current and monitor_due(monitor)):
+            return
+        p = Live().of(route)
+        if p:
+            text, up, timing = panel_view(p, panel_history(p, route, monitor))
+            buttons = refreshed_buttons(mid, up)
+        else:
+            text, buttons = "This session has ended. /list selects another session.", []
+            timing = {"watching": False}
+
+        error = edit(mid, text, buttons)
+        if current:
+            if (error and not error.retryable) or (not error and not p):
+                storage().delete(BOT, key)
+            else:
+                retry_at = time.time() + error.retry_after if error else 0
+                updated = dict(monitor, **timing, retry_at=retry_at)
+                if updated != monitor:
+                    storage().set(BOT, key, updated)
+        return error
+
+
 def monitor_once():
-    for key, item in storage().items(BOT, "monitor:"):
-        if not item.get("watching"):
-            continue
-        p = Live().of(item["route"])
-        if not p:
-            edit(item["mid"], "This session has ended. /list selects another session.")
-            storage().delete(BOT, key)
-            continue
-        text, state = status_text(p, item.get("started"))
-        # A status refresh must not become the newest reply route and take over
-        # the free-text answer field opened by a question in another message.
-        edit(item["mid"], text, CONTROL_BUTTONS)
-        if state != "Working":
-            item["watching"] = False
-            storage().set(BOT, key, item)
+    for _, item in storage().items(BOT, "monitor:"):
+        if monitor_due(item):
+            refresh_panel(item["mid"], item["route"], automatic=True)
 
 
 FREE_TEXT = re.compile(r"^\d+\.\s*(type something|other\b|something else|custom)", re.I)
@@ -387,15 +441,18 @@ def choose(p, r, i):
     there, check it got there, then Enter. Refused if that list is no longer on screen."""
     opts, text = r.get("opts") or [], tmux.screen(p["id"])
     sel = tmux.select_list(text)
-    if not sel or sel[0] != opts or not 0 <= i < len(opts) or not tmux.shows(text, r.get("anchor") or ""):
+    anchor = r.get("anchor") or ""
+    if (r.get("prompt") and p.get("prompt") != r["prompt"]) or not sel or sel[0] != opts \
+            or not 0 <= i < len(opts) or not tmux.shows(text, anchor):
         return False, "That prompt is no longer on screen."
     for _ in range(abs(i - sel[1])):
         tmux.checked("send-keys", "-t", p["id"], "Down" if i > sel[1] else "Up")
         time.sleep(0.15)
     time.sleep(0.3)
-    sel = tmux.select_list(tmux.screen(p["id"]))
+    text = tmux.screen(p["id"])
+    sel = tmux.select_list(text)
     current = ensure_live(p)
-    if not sel or sel[0] != opts or sel[1] != i \
+    if not sel or sel[0] != opts or sel[1] != i or not tmux.shows(text, anchor) \
             or (r.get("prompt") and current.get("prompt") != r["prompt"]):
         return False, "The cursor didn't land on that choice. Check /screen."
     tmux.checked("send-keys", "-t", p["id"], "Enter")
@@ -466,7 +523,7 @@ def heading(p, what):
             f"<i>{html.escape(Path(p['path']).name)}</i>")
 
 
-def on_prompt(p, r=None):
+def on_prompt(p, r=None, screen=None):
     """The dialog p waits on, as route info for buttons, or None: the one alert r is about
     if it's still up (it knows the subject), else any menu on screen, numbered or not
     (Claude's folder trust check isn't)."""
@@ -475,7 +532,7 @@ def on_prompt(p, r=None):
             tmux.dialog_is(p["id"], r.get("opts"), r.get("anchor") or ""):
         return {k: r.get(k) for k in ("pane", "agent", "server", "instance", "session",
                                       "generation", "prompt", "kind", "opts", "anchor", "cmd")}
-    text = tmux.screen(p["id"])
+    text = screen if screen is not None else tmux.screen(p["id"])
     opts, anchor = tmux.menu(text)
     if opts:
         return dict(**tmux.identity(p), kind="question",
@@ -625,13 +682,15 @@ def effort_menu(p, mid):
 # and "choices", the values behind the buttons it shows.
 
 def edit(mid, text, buttons=None):
+    """Return the API error on failure. An already up-to-date message is a success."""
     try:
         TG.api("editMessageText", chat_id=TG.chat, message_id=mid, text=text, parse_mode="HTML",
                link_preview_options={"is_disabled": True},
                reply_markup={"inline_keyboard": buttons or []})
     except telegram.TelegramError as e:
-        if "not modified" not in str(e):
+        if e.code != 400 or "message is not modified" not in str(e).lower():
             print("edit failed:", e, flush=True)
+            return e
 
 
 def btn(text, data):
@@ -969,6 +1028,7 @@ def on_message(msg):
             return say(err, mid)
         with tmux.input_lock(p["id"]):
             ensure_live(p)
+            check_pending(p)
             for k in keys:
                 tmux.checked("send-keys", "-t", p["id"], k)
                 time.sleep(0.15)
@@ -1032,12 +1092,16 @@ def on_button(q):
     if not p:
         keyboard([])
         return answer("That session has ended.")
-    if data in ("ctl:stop", "ctl:continue", "ctl:refresh"):
+    if data in ("ctl:stop", "ctl:continue", "ctl:open", "ctl:refresh"):
         answer()
         if data == "ctl:stop":
             return stop_task(p, mid)
         if data == "ctl:continue":
             return continue_task(p, r, mid)
+        if data == "ctl:refresh" and r.get("kind") != "done":
+            if refresh_panel(mid, r):
+                ack("Couldn't refresh that card. /control opens a new one.", mid)
+            return
         return control_panel(p, mid)
     if data == "screen":
         answer()
@@ -1159,7 +1223,7 @@ def main():
             backoff = 5
         except telegram.TelegramError as e:
             print("poll failed:", e, flush=True)
-            time.sleep(backoff)
+            time.sleep(max(backoff, e.retry_after))
             backoff = min(backoff * 2, 60)
             continue
         for u in updates:

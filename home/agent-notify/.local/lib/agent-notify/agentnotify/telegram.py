@@ -7,6 +7,7 @@ State (safe to delete)  ~/.local/state/tg-notify/routes.<bot>   which tmux pane 
                         ~/.local/state/tg-notify/log            one line per alert
 """
 import html
+import http.client
 import fcntl
 import json
 import os
@@ -27,9 +28,14 @@ LIMIT = 4096          # Telegram's cap, counted on the text after the HTML is pa
 
 
 class TelegramError(Exception):
-    def __init__(self, msg, code=None):
+    def __init__(self, msg, code=None, retry_after=0):
         super().__init__(msg)
         self.code = code
+        self.retry_after = retry_after
+
+    @property
+    def retryable(self):
+        return self.code is None or self.code == 429 or self.code >= 500
 
 
 def config(bot):
@@ -64,6 +70,28 @@ class Bot:
             raise TelegramError(f"the {name} bot isn't set up (tg-notify --bot {name} setup)")
         self.name, (self.token, self.chat) = name, conf
 
+    def _result(self, response):
+        with response:
+            status = response.status
+            try:
+                body = json.load(response)
+            except (OSError, ValueError, http.client.HTTPException):
+                body = None
+        if not isinstance(body, dict):
+            body = {}
+        if status < 400 and body.get("ok") is True and "result" in body:
+            return body["result"]
+        code = status if status >= 400 else body.get("error_code")
+        if not isinstance(code, int):
+            code = None
+        reason = body.get("description")
+        if not isinstance(reason, str) or not reason:
+            reason = f"HTTP {code}" if code else "Incomplete response from Telegram"
+        params = body.get("parameters")
+        delay = params.get("retry_after") if isinstance(params, dict) else None
+        raise TelegramError(reason.replace(self.token, "<token>"), code,
+                            delay if isinstance(delay, int) and delay > 0 else 0)
+
     def api(self, method, retries=0, http_timeout=20, **params):
         """Call a Bot API method. Network errors, 429 and 5xx are retried with backoff."""
         data = urllib.parse.urlencode({
@@ -71,23 +99,20 @@ class Bot:
             for k, v in params.items() if v is not None}).encode()
         url = f"https://api.telegram.org/bot{self.token}/{method}"
         for attempt in range(retries + 1):
-            wait = 2 ** (attempt + 1)
             try:
-                with urllib.request.urlopen(url, data=data, timeout=http_timeout) as r:
-                    return json.load(r)["result"]
-            except urllib.error.HTTPError as e:
                 try:
-                    body = json.load(e)
-                except ValueError:
-                    body = {}
-                err = TelegramError(body.get("description") or f"HTTP {e.code}", e.code)
-                if e.code != 429 and e.code < 500:
-                    raise err from None
-                wait = max(wait, (body.get("parameters") or {}).get("retry_after") or 0)
-            except (OSError, ValueError) as e:      # offline, timeout, garbled reply
+                    response = urllib.request.urlopen(url, data=data, timeout=http_timeout)
+                except urllib.error.HTTPError as e:
+                    response = e  # Telegram also sends a JSON error body on HTTP failures.
+                return self._result(response)
+            except TelegramError as e:
+                if not e.retryable:
+                    raise
+                err = e
+            except (OSError, ValueError, http.client.HTTPException) as e:
                 err = TelegramError(str(e).replace(self.token, "<token>"))
             if attempt < retries:
-                time.sleep(wait)
+                time.sleep(max(2 ** (attempt + 1), err.retry_after))
         raise err
 
     def send(self, text, html_mode=False, buttons=None, silent=False, reply_to=None):

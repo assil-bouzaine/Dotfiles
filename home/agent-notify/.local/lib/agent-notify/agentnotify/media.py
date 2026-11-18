@@ -1,4 +1,5 @@
 """Download phone attachments into private, uniquely named local files."""
+import http.client
 import os
 import re
 import urllib.parse
@@ -28,6 +29,7 @@ def download(bot, item):
     info = bot.api("getFile", file_id=descriptor["file_id"])
     if info.get("file_size", 0) > MAX_BYTES:
         raise ValueError("That attachment is too large. Send a file under 20 MB.")
+    expected = info.get("file_size", descriptor.get("file_size"))
     remote = PurePosixPath(info.get("file_path") or "")
     if not str(remote) or str(remote) == "." or remote.is_absolute() or ".." in remote.parts:
         raise ValueError("Telegram didn't return a usable attachment. Send it again.")
@@ -39,6 +41,12 @@ def download(bot, item):
     try:
         size = 0
         with urllib.request.urlopen(url, timeout=30) as response:
+            if expected is None:
+                length = response.headers.get("Content-Length", "")
+                if length.isdecimal():
+                    expected = int(length)
+                    if expected > MAX_BYTES:
+                        raise ValueError("That attachment is too large. Send a file under 20 MB.")
             fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "wb") as out:
                 while chunk := response.read(256 * 1024):
@@ -46,12 +54,14 @@ def download(bot, item):
                     if size > MAX_BYTES:
                         raise ValueError("That attachment is too large. Send a file under 20 MB.")
                     out.write(chunk)
+        if expected is not None and size != expected:
+            raise ValueError("The attachment download was incomplete. Send it again.")
         if not size:
             raise ValueError("That attachment was empty. Send it again.")
         partial.replace(path)
     except ValueError:
         raise
-    except OSError:
+    except (OSError, http.client.HTTPException):
         # urllib's exception can contain the bot token in its URL.
         raise ValueError("Couldn't download the attachment. Send it again when connected.") from None
     finally:

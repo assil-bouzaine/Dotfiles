@@ -67,7 +67,7 @@ accepted. Agents must run in tmux.
 | any other `/command` | typed into the agent as is (`/context`, `/usage`, `/resume` ...), what it prints comes back |
 | `/screen` | the bottom of the agent's screen, in monospace |
 | `/key 1` · `/key Escape` · `/key Down Enter` | raw keys (letters, digits, Enter, Escape, Tab, Space, BSpace, arrows, Home/End, PageUp/PageDown, C-x) |
-| `/list` | clickable session picker, eight per page; your selection survives bridge restarts |
+| `/list` | shows each session's last reported state, window and folder, with a check beside your selection. Tap a session to select it. |
 | `/control` | a task card with Stop, Continue, Show screen, Refresh status and Switch session |
 | `/stop` | request an interrupt with Escape and cancel requests already waiting to be typed into that session |
 | `/continue` | send "Continue with the current task" once the selected agent is idle |
@@ -88,8 +88,16 @@ that session when several are open. What sticks:
 After a message is sent, its task card names the agent, project, folder and window.
 While it is working, the card updates every 10 seconds with the terminal's working
 line, elapsed time and update time. It stops updating when the task finishes, needs
-an answer, or the session closes. `/control` opens a fresh card, including choices
-for an open prompt. Continue sends a new instruction; it does not resume a suspended
+an answer, or the session closes. **Refresh status** updates the card you tapped and
+keeps the elapsed time. The timer stops when the bridge sees the task leave its working
+state. If Telegram is temporarily unreachable, the bridge retries the latest card
+after reconnecting, including across a restart. In each chat, only the newest card
+for a session updates automatically.
+
+`/control` opens a fresh card, including choices for an open prompt. If a new prompt
+appears on an existing card, tap **Show choices** to get its buttons. **Task controls**
+under a completed reply opens a separate card so you can still read the reply.
+Continue sends a new instruction; it does not resume a suspended
 operating-system process. Stop leaves an open approval or question for you to answer
 explicitly, and it does not kill the agent or tmux.
 
@@ -97,14 +105,16 @@ Screenshots, image documents and other documents are downloaded into
 `~/.local/state/tg-notify/attachments/`, with unique filenames and mode 600. The
 agent receives the local path and your caption so its own tools can inspect the
 file. A missing caption asks it to inspect the image or file. Downloads have a
-20 MB cap, including when Telegram omits the file size. Files stay there for later
-reference; they are not automatically deleted. Voice transcription and outgoing
+20 MB cap, including when Telegram omits the file size. When the transfer is shorter
+than the advertised size, the bot discards the partial file and asks you to resend it.
+Completed files stay there for later reference. Voice transcription and outgoing
 artifact downloads are not part of this version.
 
 Downloads run outside the polling loop. Stop and callback buttons remain available
 while a file downloads. A pending message keeps the destination it had when it was
-received, even if you select another session meanwhile. Stop cancels pending input
-for that session across both bots; a new message sent after Stop can start work again.
+received, even if you select another session meanwhile. Stop cancels pending text,
+attachments and queued `/key` presses for that session across both bots. A new
+message sent after Stop can start work again.
 
 ### Starting a session: `/new`
 
@@ -355,7 +365,7 @@ If both run at once, the bridges fight over replies and tg-drop saves each file 
 From the dotfiles repository root:
 
 ```sh
-python3 -B -m unittest discover -s agent-notify/tests -v
+python3 -B -m unittest discover -s home/agent-notify/tests -v
 systemctl --user restart tg-bridge@claude.service tg-bridge@codex.service
 ```
 

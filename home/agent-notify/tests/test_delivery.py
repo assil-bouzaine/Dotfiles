@@ -1,4 +1,5 @@
 import io
+import http.client
 from pathlib import Path
 import sys
 import tempfile
@@ -9,6 +10,43 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / '.local/lib/agent-notify'))
 from agentnotify import media, telegram
 from agentnotify.store import Store
+
+
+class BotApiTests(unittest.TestCase):
+    def setUp(self):
+        self.bot = telegram.Bot('codex', ('test-token', 123))
+
+    def response(self, data):
+        response = io.BytesIO(data)
+        response.status = 200
+        return response
+
+    def test_incomplete_or_unexpected_poll_response_retries_with_the_same_offset(self):
+        for data in (None, b'{"ok":true}', b'[]', b'{"ok":'):
+            with self.subTest(data=data):
+                broken = self.response(data or b'')
+                if data is None:
+                    broken.read = Mock(side_effect=http.client.IncompleteRead(b'partial'))
+                good = self.response(b'{"ok":true,"result":[{"update_id":12}]}')
+                with patch.object(telegram.urllib.request, 'urlopen', side_effect=[broken, good]) as post, \
+                        patch.object(telegram.time, 'sleep') as wait:
+                    result = self.bot.api('getUpdates', offset=12, retries=1)
+                self.assertEqual(result, [{'update_id': 12}])
+                self.assertEqual(post.call_args_list[0], post.call_args_list[1])
+                wait.assert_called_once_with(2)
+                self.assertTrue(broken.closed)
+
+    def test_error_body_honors_retry_after_and_redacts_tokens(self):
+        slow = self.response(b'{"ok":false,"error_code":429,"parameters":{"retry_after":15}}')
+        denied = telegram.urllib.error.HTTPError('https://example.invalid', 403, 'Forbidden', {},
+                                                 io.BytesIO(b'{"description":"denied test-token"}'))
+        with patch.object(telegram.urllib.request, 'urlopen', side_effect=[slow, denied]) as post, \
+                patch.object(telegram.time, 'sleep') as wait, self.assertRaises(telegram.TelegramError) as err:
+            self.bot.api('editMessageText', retries=3)
+        self.assertEqual(post.call_count, 2)
+        wait.assert_called_once_with(15)
+        self.assertEqual(err.exception.code, 403)
+        self.assertNotIn('test-token', str(err.exception))
 
 
 class PersistenceTests(unittest.TestCase):
@@ -163,6 +201,24 @@ class AttachmentTests(unittest.TestCase):
             with self.assertRaises(ValueError) as caught:
                 media.download(self.bot, (dict(file_id='f'), 'file.bin', 'file'))
         self.assertNotIn('secret-token', str(caught.exception))
+
+    def test_partial_file_is_removed_when_a_download_ends_early(self):
+        for size_source in ('getFile', 'message', 'Content-Length'):
+            with self.subTest(size_source=size_source):
+                item = dict(file_id='f')
+                self.bot.api.return_value = dict(file_path='photos/file.jpg')
+                response = io.BytesIO(b'ab')
+                response.headers = {}
+                if size_source == 'getFile':
+                    self.bot.api.return_value['file_size'] = 4
+                elif size_source == 'message':
+                    item['file_size'] = 4
+                else:
+                    response.headers['Content-Length'] = '4'
+                with patch.object(media.urllib.request, 'urlopen', return_value=response), \
+                        self.assertRaisesRegex(ValueError, 'incomplete'):
+                    media.download(self.bot, (item, 'photo.jpg', 'image'))
+                self.assertEqual(list((self.root / 'attachments').iterdir()), [])
 
     def test_invalid_telegram_path_is_rejected(self):
         self.bot.api.return_value = dict(file_path='../../outside')

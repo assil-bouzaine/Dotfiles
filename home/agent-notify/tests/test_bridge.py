@@ -186,6 +186,9 @@ class BridgeTests(unittest.TestCase):
             self.assertIsNone(error)
             with self.assertRaisesRegex(RuntimeError, 'cancelled by Stop'):
                 bridge.send_text(p, r, 'should not run', 3)
+            with self.assertRaisesRegex(RuntimeError, 'cancelled by Stop'):
+                bridge.on_message(dict(message_id=4, text='/key Enter',
+                                       reply_to_message={'message_id': reply} if reply else {}))
         tmux.checked.assert_not_called()
 
     def test_continue_is_held_while_busy_and_cannot_answer_approval(self):
@@ -280,6 +283,131 @@ class BridgeTests(unittest.TestCase):
         tmux.screen.return_value = APPROVAL
         bridge.monitor_once()
         self.assertEqual(bridge.pick()[1]['kind'], 'typing')
+
+    def test_refresh_edits_the_same_card_and_preserves_working_and_finished_time(self):
+        for agent in ('claude', 'codex'):
+            with self.subTest(agent=agent), patch.object(bridge.time, 'time', return_value=1000) as clock:
+                bridge.BOT = agent
+                self.panes = [dict(pane(agent=agent), state='working')]
+                mid = bridge.control_panel(self.panes[0], 1)
+                bridge.TG.send.reset_mock()
+                clock.return_value = 1065
+                bridge.on_button(self.button('ctl:refresh', mid))
+                edit = bridge.TG.api.call_args
+                self.assertEqual(edit.args, ('editMessageText',))
+                self.assertEqual(edit.kwargs['message_id'], mid)
+                self.assertIn('Elapsed: 1m 5s', edit.kwargs['text'])
+                self.panes[0]['state'] = 'done'
+                clock.return_value = 1090
+                bridge.monitor_once()
+                clock.return_value = 1500
+                bridge.on_button(self.button('ctl:refresh', mid))
+                self.assertIn('Finished', bridge.TG.api.call_args.kwargs['text'])
+                self.assertIn('Elapsed: 1m 30s', bridge.TG.api.call_args.kwargs['text'])
+                bridge.TG.send.assert_not_called()
+                tmux.checked.assert_not_called()
+
+    def test_completion_controls_open_a_card_without_editing_the_reply(self):
+        self.route(kind='done')
+        for action in ('ctl:open', 'ctl:refresh'):  # includes buttons sent by older hooks
+            bridge.on_button(self.button(action))
+        self.assertEqual(bridge.TG.send.call_count, 2)
+        self.assertTrue(all(c.args == ('answerCallbackQuery',) for c in bridge.TG.api.call_args_list))
+        self.assertEqual(telegram.route('codex', 7)['kind'], 'done')
+
+    def test_final_status_retries_after_restart_and_respects_rate_limit(self):
+        self.panes[0]['state'] = 'working'
+        with patch.object(bridge.time, 'time', return_value=1000) as clock:
+            mid = bridge.control_panel(self.panes[0], 1)
+            self.panes[0]['state'] = 'done'
+            clock.return_value = 1065
+            bridge.TG.api.side_effect = [telegram.TelegramError('retry later', 429, 30), True]
+            bridge.monitor_once()
+            bridge._STORE = Store(self.root / 'bridge.sqlite3')
+            clock.return_value = 1094
+            bridge.monitor_once()
+            self.assertEqual(bridge.TG.api.call_count, 1)
+            clock.return_value = 1095
+            bridge.monitor_once()
+            self.assertEqual(bridge.TG.api.call_args.kwargs['message_id'], mid)
+            self.assertIn('Elapsed: 1m 5s', bridge.TG.api.call_args.kwargs['text'])
+            self.assertIn('Finished', bridge.TG.api.call_args.kwargs['text'])
+            bridge.monitor_once()
+            self.assertEqual(bridge.TG.api.call_count, 2)
+
+    def test_session_end_edit_is_retried_and_a_deleted_card_is_retired(self):
+        self.panes[0]['state'] = 'working'
+        bridge.control_panel(self.panes[0], 1)
+        self.panes.clear()
+        bridge.TG.api.side_effect = [telegram.TelegramError('offline'),
+                                     telegram.TelegramError('message to edit not found', 400)]
+        bridge.monitor_once()
+        self.assertIsNotNone(bridge.storage().get('codex', 'monitor:%1'))
+        bridge.monitor_once()
+        self.assertIn('ended', bridge.TG.api.call_args.kwargs['text'])
+        self.assertIsNone(bridge.storage().get('codex', 'monitor:%1'))
+        bridge.monitor_once()
+        self.assertEqual(bridge.TG.api.call_count, 2)
+
+    def test_already_updated_card_counts_as_delivered(self):
+        self.panes[0]['state'] = 'working'
+        mid = bridge.control_panel(self.panes[0], 1)
+        self.panes[0]['state'] = 'done'
+        bridge.TG.api.side_effect = telegram.TelegramError('Bad Request: message is not modified', 400)
+        bridge.monitor_once()
+        bridge.monitor_once()
+        self.assertEqual(bridge.TG.api.call_count, 1)
+        self.assertEqual(bridge.storage().get('codex', 'monitor:%1')['mid'], mid)
+
+    def test_refresh_of_older_card_leaves_newer_monitor_active(self):
+        self.panes[0]['state'] = 'working'
+        first = bridge.control_panel(self.panes[0], 1)
+        old = bridge.storage().get('codex', 'monitor:%1')
+        second = bridge.control_panel(self.panes[0], 2)
+        bridge.refresh_panel(first, old['route'], automatic=True)
+        bridge.TG.api.assert_not_called()
+        bridge.on_button(self.button('ctl:refresh', first))
+        self.assertEqual(bridge.TG.api.call_args.kwargs['message_id'], first)
+        self.assertEqual(bridge.storage().get('codex', 'monitor:%1')['mid'], second)
+
+    def test_refreshed_prompt_buttons_stay_bound_to_the_original_question(self):
+        self.panes[0].update(state='waiting', prompt='first')
+        tmux.screen.return_value = APPROVAL
+        mid = bridge.control_panel(self.panes[0], 1)
+        def actions():
+            rows = bridge.TG.api.call_args.kwargs['reply_markup']['inline_keyboard']
+            return [b['callback_data'] for row in rows for b in row]
+        bridge.on_button(self.button('ctl:refresh', mid))
+        self.assertIn('opt:1', actions())
+        self.panes[0]['prompt'] = 'second'
+        bridge.on_button(self.button('ctl:refresh', mid))
+        self.assertNotIn('opt:1', actions())
+        self.assertIn('ctl:open', actions())
+        self.assertEqual(telegram.route('codex', mid)['prompt'], 'first')
+        bridge.on_button(self.button('opt:1', mid))
+        tmux.checked.assert_not_called()
+        bridge.on_button(self.button('ctl:open', mid))
+        new = bridge.storage().get('codex', 'monitor:%1')['mid']
+        self.assertNotEqual(new, mid)
+        self.assertEqual(telegram.route('codex', new)['prompt'], 'second')
+
+    def test_replaced_prompt_is_checked_after_acquiring_the_terminal_lock(self):
+        self.panes[0]['prompt'] = 'first'
+        old = self.panes[0].copy()
+        r = self.route(kind='approval', opts=['1. Yes', '2. No'], anchor='npm test')
+        self.panes[0]['prompt'] = 'second'
+        tmux.screen.return_value = APPROVAL
+        self.assertFalse(bridge.press(old, r, 1)[0])
+        tmux.checked.assert_not_called()
+
+    def test_session_picker_includes_state_and_selected_destination(self):
+        self.panes[0]['state'] = 'working'
+        self.panes.append(dict(pane(2, 'claude'), state='waiting'))
+        bridge.pick('codex')
+        bridge.on_message(dict(message_id=1, text='/list'))
+        rows = bridge.TG.send.call_args.kwargs['buttons']
+        self.assertIn('✓ Codex · Working', rows[0][0]['text'])
+        self.assertIn('Claude · Waiting for your answer', rows[1][0]['text'])
 
     def test_screenshot_caption_is_sent_as_text_with_local_image_path(self):
         msg = dict(message_id=1, photo=[dict(file_id='photo', width=100, height=100)],
