@@ -7,9 +7,9 @@
 //   Dock.qml         dock on floating workspaces (SUPER + ALT + L), app grid (SUPER + ALT + SPACE)
 //   ThemePicker.qml  themes (SUPER + CTRL + T)
 //   FontPicker.qml   fonts (SUPER + CTRL + F)
-//   KeysCard.qml     every keybind, search and run (SUPER + K)
+//   KeysCard.qml     every keybind, search and run (SUPER + K); also vim / tmux (Arch menu > Learn)
 //   MenuCard.qml     the Arch menu: apps, settings, toggles, power (bar Arch logo, SUPER + D)
-// Opened / closed by ./card <menu|netcard|bluetooth|agents|apps|themes|fonts|keys>.
+// Opened / closed by ./card <menu|netcard|bluetooth|agents|apps|themes|fonts|keys [vim|tmux]>.
 // Nothing polls while closed.
 import Quickshell
 

@@ -75,7 +75,7 @@ let g:netrw_winsize = 25    " Set width
 " Map 'jj' to Escape in insert mode
 inoremap jj <Esc>
 
-" Map ';' to ':' in normal mode (saves Shift press)
+" Command line, same as : (one key, no Shift)
 nnoremap ; :
 
 " Map Ctrl+C to copy to system clipboard in visual mode
@@ -110,9 +110,13 @@ function! s:MarkdownSetup() abort
   setlocal spelllang=en_us
   " markdown reads better with 4 spaces; the global default is 2
   setlocal expandtab tabstop=4 shiftwidth=4 softtabstop=4
+  " Down one displayed line (5j still moves by file lines)
   nnoremap <buffer> <expr> j v:count == 0 ? 'gj' : 'j'
+  " Up one displayed line (5k still moves by file lines)
   nnoremap <buffer> <expr> k v:count == 0 ? 'gk' : 'k'
+  " Toggle concealed **markers**
   nnoremap <buffer> <silent> <leader>m :<C-U>call <SID>MarkdownToggleConceal()<CR>
+  " Toggle spell check
   nnoremap <buffer> <silent> <leader>s :<C-U>call <SID>MarkdownToggleSpell()<CR>
   " Undo local settings/maps when this buffer changes file type.
   let b:undo_ftplugin = get(b:, 'undo_ftplugin', '')
@@ -415,11 +419,15 @@ endfunction
 autocmd VimEnter * call HarpoonLoad()
 autocmd VimLeave * call HarpoonSave()
 
-" ── Keymaps ─────────────────────────────────────────────────────────────────
+" ── Harpoon ─────────────────────────────────────────────────────────────────
+" Mark this file
 nnoremap <leader>a  :call HarpoonAdd()<CR>
+" Unmark this file
 nnoremap <leader>d  :call HarpoonRemove()<CR>
 " <leader>D, not <leader>dd: that made <leader>d wait for a second key
+" Clear all marks
 nnoremap <leader>D  :call HarpoonRemoveAll()<CR>
+" Jump to mark 1
 nnoremap <leader>1  :call HarpoonJump(1)<CR>
 nnoremap <leader>2  :call HarpoonJump(2)<CR>
 nnoremap <leader>3  :call HarpoonJump(3)<CR>
@@ -429,6 +437,9 @@ nnoremap <leader>6  :call HarpoonJump(6)<CR>
 nnoremap <leader>7  :call HarpoonJump(7)<CR>
 nnoremap <leader>8  :call HarpoonJump(8)<CR>
 nnoremap <leader>9  :call HarpoonJump(9)<CR>
+" Next mark
 nnoremap <leader>n  :call HarpoonNext()<CR>
+" Previous mark
 nnoremap <leader>p  :call HarpoonPrev()<CR>
+" Pick a mark (fzf)
 nnoremap <leader>h  :call HarpoonFuzzy()<CR>

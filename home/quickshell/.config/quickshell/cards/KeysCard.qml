@@ -6,6 +6,8 @@ import Quickshell.Wayland
 
 // Every keybind (SUPER + K), in config order. Read the config afresh on open;
 // release the keyboard and let the card fade before dispatching a chosen bind.
+// The same card lists your own vim and tmux shortcuts (Arch menu > Learn):
+// `card keys vim|tmux`, read from ~/.vimrc / ~/.tmux.conf by keymaps.py.
 Scope {
     id: root
 
@@ -23,6 +25,16 @@ Scope {
     property bool reloadPending: false
     property string error: ""
     property string pendingRun: ""
+    property string source: "hypr"   // hypr | vim | tmux
+    readonly property var sources: ({
+        hypr: { title: "Keybinds", icon: "󰌌", unit: "binds",
+                cmd: ["lua", Quickshell.env("HOME") + "/.config/hypr/scripts/keybinds.lua", "--json"] },
+        vim:  { title: "Vim keymaps", icon: String.fromCodePoint(0xE62B), unit: "keymaps",
+                cmd: ["python3", Quickshell.env("HOME") + "/.config/quickshell/cards/keymaps.py", "vim"] },
+        tmux: { title: "Tmux keybinds", icon: String.fromCodePoint(0xEBC8), unit: "binds",
+                cmd: ["python3", Quickshell.env("HOME") + "/.config/quickshell/cards/keymaps.py", "tmux"] }
+    })
+    readonly property var info: sources[source] || sources.hypr
     property var targetScreen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
 
     function rebuild() {
@@ -38,7 +50,9 @@ Scope {
         root.filterText = text
         root.rebuild()
     }
-    function openOn(name) {
+    function openOn(name) { openWith("hypr", name) }
+    function openWith(src, name) {
+        root.source = root.sources[src] ? src : "hypr"
         for (const s of Quickshell.screens) if (s.name === name) root.targetScreen = s
         root.pendingRun = ""
         runTimer.stop()
@@ -51,7 +65,8 @@ Scope {
         else listProc.running = true
         Qt.callLater(() => keys.forceActiveFocus())
     }
-    function open() { openOn(Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "") }
+    function focusedName() { return Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "" }
+    function open() { openWith("hypr", focusedName()) }
     function close() {
         if (!root.opened) return
         root.opened = false
@@ -60,6 +75,11 @@ Scope {
     function toggle() {
         if (root.opened) close()
         else if (Date.now() - root.closedAt > 300) open()
+    }
+    // vim / tmux list: the same source's press closes it, another switches to it
+    function toggleSource(src) {
+        if (root.opened && root.source === src) close()
+        else if (root.opened || Date.now() - root.closedAt > 300) openWith(src, focusedName())
     }
     function select(delta) {
         if (!root.filtered.length) return
@@ -76,7 +96,7 @@ Scope {
 
     Process {
         id: listProc
-        command: ["lua", Quickshell.env("HOME") + "/.config/hypr/scripts/keybinds.lua", "--json"]
+        command: root.info.cmd
         stdout: StdioCollector { id: bindOutput }
         stderr: StdioCollector { id: bindError }
         onExited: code => {
@@ -89,7 +109,7 @@ Scope {
             }
             root.loading = false
             if (code !== 0) {
-                root.error = bindError.text.trim() || "Couldn't read the keybinds"
+                root.error = bindError.text.trim() || "Couldn't read the " + root.info.unit
                 return
             }
             try {
@@ -98,7 +118,7 @@ Scope {
                 root.binds = data.binds
                 root.rebuild()
             } catch (e) {
-                root.error = "Couldn't read keybinds.lua --json"
+                root.error = "Couldn't parse the " + root.info.unit + " list"
             }
         }
     }
@@ -117,8 +137,11 @@ Scope {
         target: "keys"
         function toggle(): void { root.toggle() }
         function open(): void { root.open() }
+        function toggleSource(src: string): void { root.toggleSource(src) }
+        function openSource(src: string): void { root.openWith(src, root.focusedName()) }
         function close(): void { root.close() }
         function openOn(screen: string): void { root.openOn(screen) }   // tests
+        function openSourceOn(src: string, screen: string): void { root.openWith(src, screen) }   // tests
         function filter(text: string): void { root.setFilter(text) }   // tests
         function nav(d: int): void { root.select(d) }                  // tests
     }
@@ -201,14 +224,14 @@ Scope {
                 y: 18
                 spacing: 10
                 Text {
-                    text: "󰌌"
+                    text: root.info.icon
                     color: Theme.accent
                     font.family: Theme.font
                     font.pixelSize: 18
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Text {
-                    text: "Keybinds"
+                    text: root.info.title
                     color: Theme.fg
                     font.family: Theme.font
                     font.pixelSize: 15
@@ -216,7 +239,7 @@ Scope {
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Text {
-                    text: root.loading ? "Loading…" : root.filtered.length + (root.filterText ? " / " + root.binds.length : "") + " binds"
+                    text: root.loading ? "Loading…" : root.filtered.length + (root.filterText ? " / " + root.binds.length : "") + " " + root.info.unit
                     color: Theme.faint
                     font.family: Theme.font
                     font.pixelSize: 12
@@ -314,8 +337,9 @@ Scope {
                                     required property int index
                                     spacing: 5
                                     Text {
-                                        visible: chip.index > 0
-                                        text: "+"
+                                        // "+" between chord keys; nothing between a sequence's presses
+                                        visible: chip.index > 0 && entry.modelData.sep !== ""
+                                        text: entry.modelData.sep !== undefined ? entry.modelData.sep : "+"
                                         color: Theme.faint
                                         font.family: Theme.font
                                         font.pixelSize: 11
@@ -381,7 +405,7 @@ Scope {
                 anchors.centerIn: list
                 width: list.width - 24
                 visible: !root.filtered.length
-                text: root.error || (root.loading ? "Loading keybinds…" : "No keybinds match “" + root.filterText + "”")
+                text: root.error || (root.loading ? "Loading " + root.info.unit + "…" : "No " + root.info.unit + " match “" + root.filterText + "”")
                 textFormat: Text.PlainText
                 color: root.error ? Theme.red : Theme.muted
                 font.family: Theme.font
@@ -395,7 +419,8 @@ Scope {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 14
                 width: card.width - 36
-                text: "type to search   ↑ ↓ move   Enter run   Esc close"
+                text: root.source === "hypr" ? "type to search   ↑ ↓ move   Enter run   Esc close"
+                                             : "type to search   ↑ ↓ move   Esc close   ·   from ~/" + (root.source === "vim" ? ".vimrc" : ".tmux.conf")
                 color: Theme.faint
                 font.family: Theme.font
                 font.pixelSize: 11

@@ -82,7 +82,7 @@ Scope {
         { id: "toggle",     page: "", kind: "page", icon: 0xF0521, label: "Toggle", about: "Stay awake, night light, notifications", words: "switches quick settings" },
         { id: "capture",    page: "", kind: "page", icon: 0xF030,  label: "Capture", about: "Screenshots, send to phone", words: "screenshot" },
         { id: "setup",      page: "", kind: "page", icon: 0xE615,  label: "Setup", about: "Wi-Fi, Bluetooth, sound, agents", sep: true, words: "settings" },
-        { id: "learn",      page: "", kind: "page", icon: 0xF09D1, label: "Learn", about: "Keybindings and wikis", words: "help docs" },
+        { id: "learn",      page: "", kind: "page", icon: 0xF09D1, label: "Learn", about: "Keybindings, vim, tmux, wikis", words: "help docs" },
         { id: "update",     page: "", kind: "run",  icon: 0xF021,  label: "Update", about: "Update every package in a terminal", hint: "yay -Syu", words: "upgrade packages pacman system",
           cmd: "kitty --class=bar-update --title='System update' -e bash -c 'yay -Syu; echo; read -rsn1 -p \"Done. Press any key to close.\"'" },
         { id: "system",     page: "", kind: "page", icon: 0xF011,  label: "System", about: "Lock, suspend, log out, reboot, shut down", sep: true, words: "power" },
@@ -111,7 +111,8 @@ Scope {
         { id: "keys",     page: "learn", kind: "run", icon: 0xF11C,  label: "Keybindings", cmd: cardCmd + "keys", keys: "Super K", words: "shortcuts cheat sheet" },
         { id: "hyprwiki", page: "learn", kind: "run", icon: 0xF359,  label: "Hyprland wiki", cmd: "xdg-open https://wiki.hypr.land/", words: "docs" },
         { id: "archwiki", page: "learn", kind: "run", icon: 0xF303,  label: "Arch wiki", cmd: "xdg-open https://wiki.archlinux.org/", words: "docs" },
-        { id: "bash",     page: "learn", kind: "run", icon: 0xF1183, label: "Bash cheat sheet", cmd: "xdg-open https://devhints.io/bash", words: "shell scripting" },
+        { id: "vimkeys",  page: "learn", kind: "run", icon: 0xE62B,  label: "Vim keymaps", cmd: cardCmd + "keys vim", hint: "~/.vimrc", words: "vimrc editor leader shortcuts harpoon fzf" },
+        { id: "tmuxkeys", page: "learn", kind: "run", icon: 0xEBC8,  label: "Tmux keybinds", cmd: cardCmd + "keys tmux", hint: "~/.tmux.conf", words: "terminal multiplexer prefix shortcuts" },
 
         { id: "lock",     page: "system", kind: "run",     icon: 0xF023,  label: "Lock", cmd: "hyprlock", keys: "Super L", words: "screen" },
         { id: "suspend",  page: "system", kind: "run",     icon: 0xF04B2, label: "Suspend", cmd: "systemctl suspend", words: "sleep" },
