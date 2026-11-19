@@ -114,12 +114,14 @@ hl.bind(mainMod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true, descr
 
 -- Laptop multimedia keys for volume and LCD brightness (were `bindel`).
 -- Mute keys do not repeat: holding them would flip mute on and off.
-hl.bind("XF86AudioRaiseVolume",  hl.dsp.exec_cmd("wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+"), { locked = true, repeating = true, description = "Volume up" })
-hl.bind("XF86AudioLowerVolume",  hl.dsp.exec_cmd("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"),      { locked = true, repeating = true, description = "Volume down" })
-hl.bind("XF86AudioMute",         hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"),     { locked = true, description = "Toggle mute" })
+-- Each one also shows the pill under the bar (quickshell cards/OsdCard.qml, via osd.sh).
+local osd = "~/.config/quickshell/cards/osd.sh "
+hl.bind("XF86AudioRaiseVolume",  hl.dsp.exec_cmd(osd .. "volume up"),        { locked = true, repeating = true, description = "Volume up" })
+hl.bind("XF86AudioLowerVolume",  hl.dsp.exec_cmd(osd .. "volume down"),      { locked = true, repeating = true, description = "Volume down" })
+hl.bind("XF86AudioMute",         hl.dsp.exec_cmd(osd .. "volume mute"),      { locked = true, description = "Toggle mute" })
 hl.bind("XF86AudioMicMute",      hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"),   { locked = true, description = "Toggle microphone mute" })
-hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd("brightnessctl -d intel_backlight set +10%"),      { locked = true, repeating = true, description = "Brightness up" })
-hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("brightnessctl -d intel_backlight set 10%-"),       { locked = true, repeating = true, description = "Brightness down" })
+hl.bind("XF86MonBrightnessUp",   hl.dsp.exec_cmd(osd .. "brightness up"),    { locked = true, repeating = true, description = "Brightness up" })
+hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd(osd .. "brightness down"),  { locked = true, repeating = true, description = "Brightness down" })
 
 -- Switch sound between laptop speakers and the monitor's headphone jack
 -- (H for headphones; was SHIFT + O, too easy to confuse with SHIFT + 0)

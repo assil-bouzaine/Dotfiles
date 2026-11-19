@@ -9,6 +9,7 @@
 //   FontPicker.qml   fonts (SUPER + CTRL + F)
 //   KeysCard.qml     every keybind, search and run (SUPER + K); also vim / tmux (Arch menu > Learn)
 //   MenuCard.qml     the Arch menu: apps, settings, toggles, power (bar Arch logo, SUPER + D)
+//   OsdCard.qml      brightness and volume pill above the dock, shown by osd.sh on the media keys
 // Opened / closed by ./card <menu|netcard|bluetooth|agents|apps|themes|fonts|keys [vim|tmux]>.
 // Nothing polls while closed.
 import Quickshell
@@ -22,4 +23,5 @@ ShellRoot {
     ThemePicker {}
     FontPicker {}
     KeysCard {}
+    OsdCard {}
 }
