@@ -15,6 +15,7 @@ again) to close it.
 | SUPER + T | task manager: `hypr/scripts/tasks` (btop in a floating kitty window) |
 | SUPER + K | keybind card: `quickshell/cards/card keys` (search and run binds) |
 | SUPER + B | Bluetooth card: `quickshell/cards/BtCard.qml` (power, scan, connect / pair) |
+| SUPER + CTRL + A | agents card: `quickshell/cards/AgentsCard.qml` (Claude Code, Codex, Antigravity, OpenCode, Pi: limits, 7-day activity, live tmux jump & per-agent launch) |
 | SUPER + L | lock screen |
 | SUPER + 1…0 | workspaces (also clickable on the bar) |
 | SUPER + CTRL + SPACE | wallpaper picker (current theme first) |

@@ -1,14 +1,16 @@
 // Agents card: the drop-down behind the bar's robot icon (SUPER + CTRL + A).
 //
-// Laid out like Omarchy 4.5's agents panel (MIT, github.com/basecamp/omarchy,
-// shell/plugins/agents): a hero with the robot and a line that rotates through
-// this week's token counts, one section per subscription (mark, name, plan, a
-// meter per limit window with the time until it resets, exact % on hover),
-// and "make something cool" starters that open an agent on a task. Agents
-// start in a new window of the tmux session "main", in ~ (agentsctl.py launch).
-// Data from agentsctl.py; marks in assets/ are Omarchy's.
+// Modelled on Omarchy 4.5's agents panel (MIT, github.com/omacom/omarchy,
+// shell/plugins/agents), extended for Claude Code, Codex, Antigravity (agy),
+// OpenCode, and Pi:
+//   - Hero with rotating token / activity summary across all detected CLIs
+//   - One row per auto-detected agent: brand mark, name, plan/provider, live
+//     tmux session badge (click to jump straight to its window), quota meters
+//     (with reset countdown, scoped 3P ticks, and exact % on hover) or 7-day
+//     activity sparkline, and a per-agent terminal launcher (󰞷).
 //
-// Keys: j/k h/l move, Enter select, r refresh, Esc close.
+// Keys: j/k move, h/l switch row action, 1-5 jump/launch agent, Enter select,
+//       r refresh, Esc close.
 
 import QtQuick
 import QtQuick.Layouts
@@ -38,11 +40,14 @@ Scope {
     property bool cursorActive: false
     property string toastText: ""
 
-    readonly property var starters: [
-        { glyph: "󰕮", label: "Bar widget", prompt: "Add a new widget to my Waybar bar (~/.dotfiles/home/waybar). Ask me what it should show, then build it in the same ink-island style as the rest of the bar and reload it." },
-        { glyph: "󰐱", label: "Card", prompt: "Make me a new Quickshell drop-down card like the network and agents cards in ~/.dotfiles/home/quickshell/.config/quickshell/cards. Ask me what it should do, then build it, add a bar icon or keybind, and test it on a headless output." },
-        { glyph: "󰣆", label: "App", prompt: "Make me a small desktop app for my Hyprland setup. Ask me what it should do, then build it and add a .desktop entry so it shows up in the rofi launcher." }
-    ]
+    readonly property int liveTotal: {
+        let n = 0
+        for (const a of agents) {
+            const lv = liveFor(a)
+            if (lv) n += lv.count || 1
+        }
+        return n
+    }
 
     // ── helpers ──────────────────────────────────────────────────────────
     function tokens(n) {
@@ -50,7 +55,7 @@ Scope {
         if (n >= 1e6) return (n / 1e6).toFixed(1) + "M"
         if (n >= 1e4) return Math.round(n / 1e3) + "k"
         if (n >= 1e3) return (n / 1e3).toFixed(1) + "k"
-        return String(n)
+        return String(n || 0)
     }
 
     function duration(secs) {
@@ -61,21 +66,47 @@ Scope {
         return Math.max(1, m) + "m"
     }
 
+    function usageFor(agentId) {
+        return (stats && stats.per_agent && stats.per_agent[agentId]) ? stats.per_agent[agentId] : null
+    }
+
+    function liveFor(agent) {
+        if (!agent) return null
+        if (stats && stats.live && stats.live[agent.id]) return stats.live[agent.id]
+        return agent.live || null
+    }
+
     readonly property var heroLines: {
         const s = stats
-        if (!s) return ["Counting tokens…"]
+        if (!s) return ["Scanning agents…"]
         const l = []
-        l.push(tokens(s.week_tokens) + " tokens this week")
-        l.push(tokens(s.today_tokens) + " tokens today")
+        if (liveTotal > 0) l.push(liveTotal + (liveTotal === 1 ? " agent active right now" : " agents active right now"))
+        if (s.week_tokens > 0) l.push(tokens(s.week_tokens) + " tokens this week")
+        if (s.today_tokens > 0) l.push(tokens(s.today_tokens) + " tokens today")
         if (s.top_model) l.push("Mostly " + s.top_model)
         if (s.busiest_day) l.push("Busiest day: " + s.busiest_day)
-        l.push(s.prompts_today + (s.prompts_today === 1 ? " prompt today" : " prompts today"))
-        l.push(s.sessions_today + (s.sessions_today === 1 ? " session today" : " sessions today"))
-        return l
+        if (s.prompts_today > 0) l.push(s.prompts_today + (s.prompts_today === 1 ? " prompt today" : " prompts today"))
+        if (s.sessions_today > 0) l.push(s.sessions_today + (s.sessions_today === 1 ? " session today" : " sessions today"))
+        return l.length > 0 ? l : ["Ready to code"]
     }
 
     function meterColor(p) {
         return p >= 100 ? Theme.red : p >= 80 ? Theme.yellow : Theme.cyan
+    }
+
+    function liveLabel(lv) {
+        if (!lv) return ""
+        const st = lv.state || "running"
+        const base = st === "question" ? "Input" : st === "waiting" ? "Waiting" : st === "working" ? "Working" : st === "done" ? "Done" : "Live"
+        return lv.count > 1 ? base + " · " + lv.count : base
+    }
+
+    function liveColor(lv) {
+        if (!lv) return Theme.green
+        const st = lv.state || "running"
+        if (st === "question" || st === "waiting") return Theme.yellow
+        if (st === "working") return Theme.cyan
+        return Theme.green
     }
 
     function run(args, done) {
@@ -92,7 +123,7 @@ Scope {
                 agents = d.agents || []
                 fetchedAt = d.fetched_at || 0
             } catch (e) {}
-            Quickshell.execDetached(["pkill", "-RTMIN+12", "-x", "waybar"])   // robot icon colour
+            Quickshell.execDetached(["pkill", "-RTMIN+12", "-x", "waybar"])
         })
         run(["stats"], text => { try { stats = JSON.parse(text) } catch (e) {} })
     }
@@ -119,26 +150,47 @@ Scope {
     }
     function toggle() {
         if (opened) close()
-        else if (Date.now() - closedAt > 400) open()   // the bar click that cleared the grab meant "close"
+        else if (Date.now() - closedAt > 400) open()
     }
 
     // ── actions + cursor ─────────────────────────────────────────────────
+    function agentById(id) {
+        for (const a of agents) if (a.id === id) return a
+        return null
+    }
+
     function activate(id) {
         if (!id) return
-        const [what, arg] = id.split(":")
-        if (what === "refresh") { refresh(true); toast("Checking limits…") }
-        else if (what === "start") { run(["launch", "claude"]); close() }
+        const idx = id.indexOf(":")
+        const what = idx >= 0 ? id.slice(0, idx) : id
+        const arg = idx >= 0 ? id.slice(idx + 1) : ""
+        if (what === "refresh") { refresh(true); toast("Refreshing limits & stats…") }
+        else if (what === "launch") { run(["launch", arg]); close() }
+        else if (what === "focus") { run(["focus", arg]); close() }
         else if (what === "login") { run(["login", arg]); close() }
-        else if (what === "starter") { run(["launch", "claude", starters[Number(arg)].prompt]); close() }
+    }
+
+    function quickJumpOrLaunch(index) {
+        if (index < 0 || index >= agents.length) return
+        const a = agents[index]
+        const lv = liveFor(a)
+        if (lv && lv.target) activate("focus:" + lv.target)
+        else activate("launch:" + a.id)
     }
 
     function isHot(id) { return cursorActive && cursor === id }
     function hover(id) { cursor = id; cursorActive = true }
 
     function focusRows() {
-        const rows = [["refresh", "start"]]
-        for (const a of agents) if (a.error && a.auth_error) rows.push(["login:" + a.id])
-        rows.push(starters.map((s, i) => "starter:" + i))
+        const rows = [["refresh"]]
+        for (const a of agents) {
+            const row = []
+            const lv = liveFor(a)
+            if (lv && lv.target) row.push("focus:" + lv.target)
+            if (a.error && a.auth_error) row.push("login:" + a.id)
+            row.push("launch:" + a.id)
+            rows.push(row)
+        }
         return rows
     }
 
@@ -149,19 +201,31 @@ Scope {
             const j = rows[i].indexOf(cursor)
             if (j >= 0) { ri = i; ci = j }
         }
-        if (ri < 0 || !cursorActive) { cursorActive = true; cursor = rows[rows.length - 1][0]; return }
+        if (ri < 0 || !cursorActive) {
+            cursorActive = true
+            cursor = rows.length > 1 ? rows[1][0] : rows[0][0]
+            return
+        }
         ri = Math.max(0, Math.min(rows.length - 1, ri + dr))
         ci = dr !== 0 ? Math.min(ci, rows[ri].length - 1) : Math.max(0, Math.min(rows[ri].length - 1, ci + dc))
         cursor = rows[ri][ci]
     }
 
     function hint(id) {
-        if (!cursorActive || !id) return "j k move   h l switch   Enter select   r refresh   Esc close"
-        const [what, arg] = id.split(":")
-        if (what === "refresh") return "Check the limits again"
-        if (what === "start") return "Start Claude Code in a new tmux window"
-        if (what === "login") return "Sign in again"
-        if (what === "starter") return "Start Claude Code on: " + starters[Number(arg)].label.toLowerCase()
+        if (!cursorActive || !id) return "1-5 launch   j k move   r refresh   Esc close"
+        const idx = id.indexOf(":")
+        const what = idx >= 0 ? id.slice(0, idx) : id
+        const arg = idx >= 0 ? id.slice(idx + 1) : ""
+        if (what === "refresh") return "Refresh limits and usage across all agents"
+        if (what === "launch") {
+            const a = agentById(arg)
+            return "Start " + (a ? a.name : arg) + " in a new tmux window"
+        }
+        if (what === "focus") return "Jump to live tmux pane (" + arg + ")"
+        if (what === "login") {
+            const a = agentById(arg)
+            return "Sign in again to " + (a ? a.name : arg)
+        }
         return ""
     }
 
@@ -225,17 +289,20 @@ Scope {
         property string glyph
         property bool hot: false
         property bool spinning: false
+        property int size: 30
+        property int glyphSize: 15
         signal hovered()
         signal activated()
-        implicitWidth: 32
-        implicitHeight: 32
-        radius: 10
+        implicitWidth: size
+        implicitHeight: size
+        radius: 9
         color: hot ? Theme.lift : "transparent"
         Behavior on color { ColorAnimation { duration: 90 } }
         Icon {
-            id: glyphText
             anchors.centerIn: parent
             text: ib.glyph
+            font.pixelSize: ib.glyphSize
+            color: ib.hot ? Theme.fgBright : Theme.muted
             RotationAnimation on rotation { running: ib.spinning; loops: Animation.Infinite; from: 0; to: 360; duration: 900 }
             rotation: 0
         }
@@ -248,24 +315,26 @@ Scope {
         color: Theme.rule
     }
 
-    // One limit window: label, meter, time to reset (exact % while hovered).
+    // One limit window: label, meter (with optional 3P scoped ticks), time to reset (exact % on hover).
     component WindowRow: Item {
         id: wr
         property var win
         property double now
         readonly property double pct: win ? Math.min(100, win.percent) : 0
-        implicitHeight: 26
+        readonly property var scoped: win && win.scoped ? win.scoped : []
+        implicitHeight: 24
         HoverHandler { id: wrHover }
         RowLayout {
             anchors.fill: parent
-            spacing: 12
+            spacing: 10
             Label {
-                Layout.preferredWidth: 58
+                Layout.preferredWidth: 56
                 text: wr.win ? wr.win.label : ""
                 color: Theme.muted
                 font.pixelSize: 12
             }
             Rectangle {
+                id: track
                 Layout.fillWidth: true
                 implicitHeight: 6
                 radius: 3
@@ -284,13 +353,28 @@ Scope {
                         GradientStop { position: 1; color: Theme.accent2 }
                     }
                 }
+                // Scoped allowance ticks (e.g. Antigravity's Claude/GPT bucket on the same clock)
+                Repeater {
+                    model: wr.scoped
+                    Rectangle {
+                        required property var modelData
+                        width: 2
+                        height: 12
+                        radius: 1
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: Math.max(0, Math.min(track.width - width, track.width * Math.min(100, modelData.percent) / 100 - width / 2))
+                        color: root.meterColor(modelData.percent)
+                    }
+                }
             }
             Label {
-                Layout.preferredWidth: 104
+                Layout.preferredWidth: 102
                 horizontalAlignment: Text.AlignRight
                 font.pixelSize: 12
                 color: wrHover.hovered ? Theme.fg : (wr.pct >= 100 ? Theme.red : Theme.faint)
-                text: !wr.win ? "" : wrHover.hovered ? Math.round(wr.win.percent) + "% used"
+                text: !wr.win ? ""
+                    : wrHover.hovered
+                        ? Math.round(wr.win.percent) + "% used" + (wr.scoped.length > 0 ? " · " + wr.scoped[0].title + " " + Math.round(wr.scoped[0].percent) + "%" : "")
                     : wr.win.resets_at ? (wr.pct >= 100 ? "back in " : "resets in ") + root.duration(wr.win.resets_at - wr.now)
                     : Math.round(wr.win.percent) + "% used"
             }
@@ -305,7 +389,7 @@ Scope {
         anchors { top: true; right: true }
         margins { top: 42; right: 6 }
         exclusionMode: ExclusionMode.Ignore
-        implicitWidth: 404
+        implicitWidth: 416
         implicitHeight: card.height
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Overlay
@@ -349,6 +433,7 @@ Scope {
                         else root.activate(root.cursor)
                     }
                     else if (k === Qt.Key_R) root.activate("refresh")
+                    else if (k >= Qt.Key_1 && k <= Qt.Key_9) root.quickJumpOrLaunch(k - Qt.Key_1)
                     else return
                     e.accepted = true
                 }
@@ -371,6 +456,18 @@ Scope {
                         radius: 13
                         color: Theme.cyanSoft
                         Icon { anchors.centerIn: parent; text: "󰚩"; font.pixelSize: 22; color: Theme.cyan }
+                        Rectangle {
+                            visible: root.liveTotal > 0
+                            width: 9
+                            height: 9
+                            radius: 5
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 3
+                            color: Theme.green
+                            border.width: 2
+                            border.color: Theme.ink
+                        }
                     }
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -392,85 +489,261 @@ Scope {
                     }
                     IconButton {
                         glyph: "󰑐"
+                        size: 32
+                        glyphSize: 16
                         spinning: root.loading
                         hot: root.isHot("refresh")
                         onHovered: root.hover("refresh")
                         onActivated: root.activate("refresh")
                     }
-                    IconButton {
-                        glyph: "󰞷"
-                        hot: root.isHot("start")
-                        onHovered: root.hover("start")
-                        onActivated: root.activate("start")
-                    }
                 }
 
                 Rule {}
 
-                SectionTitle { text: "SUBSCRIPTIONS" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    SectionTitle { text: "AGENTS" }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        visible: root.agents.length > 0
+                        font.pixelSize: 11
+                        color: Theme.faint
+                        text: root.agents.length + " detected" + (root.liveTotal > 0 ? " · " + root.liveTotal + " live" : "")
+                    }
+                }
 
                 Label {
                     visible: root.agents.length === 0
                     color: Theme.faint
                     font.pixelSize: 12
-                    text: root.loading ? "Checking limits…" : "No Claude Code or Codex sign-in found"
+                    text: root.loading ? "Detecting agents…" : "No supported agent CLI detected"
                 }
 
-                Repeater {
-                    model: root.agents
-                    delegate: ColumnLayout {
-                        id: agentBox
-                        required property var modelData
-                        required property int index
-                        Layout.fillWidth: true
-                        Layout.topMargin: index > 0 ? 4 : 0
-                        spacing: 4
-                        readonly property bool stale: !!modelData.error && modelData.windows.length > 0
+                Flickable {
+                    id: listFlick
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(520, agentsCol.implicitHeight)
+                    contentWidth: width
+                    contentHeight: agentsCol.implicitHeight
+                    clip: true
+                    interactive: contentHeight > height
+                    boundsBehavior: Flickable.StopAtBounds
 
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 10
-                            Image {
-                                Layout.preferredWidth: 20
-                                Layout.preferredHeight: 20
-                                source: Qt.resolvedUrl("assets/" + agentBox.modelData.id + ".svg")
-                                sourceSize: Qt.size(40, 40)
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            Label { text: agentBox.modelData.name; font.weight: Font.Bold }
-                            Label {
-                                visible: !!agentBox.modelData.plan
-                                text: agentBox.modelData.plan
-                                color: Theme.muted
-                                font.pixelSize: 12
-                            }
-                            Item { Layout.fillWidth: true }
-                            // trouble: sign-in link, or a note that the numbers are old
-                            Label {
-                                visible: !!agentBox.modelData.error
-                                font.pixelSize: 12
-                                color: agentBox.modelData.auth_error ? (root.isHot("login:" + agentBox.modelData.id) ? Theme.fg : Theme.yellow) : Theme.faint
-                                font.underline: !!agentBox.modelData.auth_error
-                                text: agentBox.modelData.auth_error ? "Sign-in required"
-                                    : agentBox.stale ? "󰋼 Last known" : "Limits unavailable"
-                                Hit {
-                                    anchors.fill: parent
-                                    enabled: !!agentBox.modelData.auth_error
-                                    onEntered: root.hover("login:" + agentBox.modelData.id)
-                                    onClicked: root.activate("login:" + agentBox.modelData.id)
-                                }
-                            }
-                        }
+                    ColumnLayout {
+                        id: agentsCol
+                        width: listFlick.width
+                        spacing: 10
 
                         Repeater {
-                            model: agentBox.modelData.windows
-                            WindowRow {
+                            model: root.agents
+                            delegate: ColumnLayout {
+                                id: agentBox
                                 required property var modelData
+                                required property int index
+                                readonly property var lv: root.liveFor(modelData)
+                                readonly property var usg: root.usageFor(modelData.id)
+                                readonly property bool hasWindows: modelData.windows && modelData.windows.length > 0
+                                readonly property bool hasActivity: !!usg && usg.week_tokens > 0
+                                readonly property bool stale: !!modelData.error && hasWindows
+
                                 Layout.fillWidth: true
-                                Layout.leftMargin: 30
-                                win: modelData
-                                now: root.now
-                                opacity: agentBox.stale ? 0.55 : 1
+                                spacing: 4
+
+                                // Divider between agent blocks
+                                Rectangle {
+                                    visible: agentBox.index > 0
+                                    Layout.fillWidth: true
+                                    Layout.bottomMargin: 4
+                                    implicitHeight: 1
+                                    color: Theme.rule
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Image {
+                                        Layout.preferredWidth: 19
+                                        Layout.preferredHeight: 19
+                                        source: Qt.resolvedUrl("assets/" + agentBox.modelData.id + ".svg")
+                                        sourceSize: Qt.size(38, 38)
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: false
+                                        smooth: true
+                                    }
+
+                                    Label {
+                                        text: agentBox.modelData.name
+                                        font.weight: Font.Bold
+                                    }
+
+                                    Label {
+                                        visible: !!agentBox.modelData.plan
+                                        text: agentBox.modelData.plan
+                                        color: Theme.muted
+                                        font.pixelSize: 12
+                                    }
+
+                                    // Live tmux session pill (click to jump straight to that pane)
+                                    Rectangle {
+                                        id: livePill
+                                        visible: !!agentBox.lv
+                                        readonly property string focusId: agentBox.lv && agentBox.lv.target ? "focus:" + agentBox.lv.target : ""
+                                        readonly property bool hot: focusId !== "" && root.isHot(focusId)
+                                        readonly property color pillColor: root.liveColor(agentBox.lv)
+                                        implicitWidth: liveRow.implicitWidth + 12
+                                        implicitHeight: 20
+                                        radius: 10
+                                        color: hot ? Theme.alpha(pillColor, 0.28) : Theme.alpha(pillColor, 0.14)
+                                        border.width: 1
+                                        border.color: hot ? pillColor : Theme.alpha(pillColor, 0.35)
+                                        Row {
+                                            id: liveRow
+                                            anchors.centerIn: parent
+                                            spacing: 5
+                                            Rectangle {
+                                                width: 6
+                                                height: 6
+                                                radius: 3
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                color: livePill.pillColor
+                                            }
+                                            Text {
+                                                text: root.liveLabel(agentBox.lv)
+                                                color: livePill.pillColor
+                                                font.family: Theme.sans
+                                                font.pixelSize: 11
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+                                        Hit {
+                                            anchors.fill: parent
+                                            enabled: livePill.focusId !== ""
+                                            onEntered: root.hover(livePill.focusId)
+                                            onClicked: root.activate(livePill.focusId)
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    // Status note / auth prompt
+                                    Label {
+                                        visible: !!agentBox.modelData.error || !!agentBox.modelData.status_note
+                                        font.pixelSize: 11
+                                        color: agentBox.modelData.auth_error
+                                            ? (root.isHot("login:" + agentBox.modelData.id) ? Theme.fgBright : Theme.yellow)
+                                            : Theme.faint
+                                        font.underline: !!agentBox.modelData.auth_error
+                                        text: agentBox.modelData.auth_error ? "Sign-in required"
+                                            : agentBox.modelData.status_note ? "󰋼 " + agentBox.modelData.status_note
+                                            : agentBox.stale ? "󰋼 Last known"
+                                            : "Limits unavailable"
+                                        Hit {
+                                            anchors.fill: parent
+                                            enabled: !!agentBox.modelData.auth_error
+                                            onEntered: root.hover("login:" + agentBox.modelData.id)
+                                            onClicked: root.activate("login:" + agentBox.modelData.id)
+                                        }
+                                    }
+
+                                    // Per-agent terminal launcher
+                                    IconButton {
+                                        glyph: "󰞷"
+                                        size: 26
+                                        glyphSize: 14
+                                        hot: root.isHot("launch:" + agentBox.modelData.id)
+                                        onHovered: root.hover("launch:" + agentBox.modelData.id)
+                                        onActivated: root.activate("launch:" + agentBox.modelData.id)
+                                    }
+                                }
+
+                                // Rate-limit meters (Claude, Codex, Antigravity, OpenCode Go)
+                                Repeater {
+                                    model: agentBox.hasWindows ? agentBox.modelData.windows : []
+                                    WindowRow {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        Layout.leftMargin: 27
+                                        win: modelData
+                                        now: root.now
+                                        opacity: agentBox.stale ? 0.55 : 1
+                                    }
+                                }
+
+                                // 7-day sparkline when there are no quota windows (OpenCode Zen, Pi, etc.)
+                                Item {
+                                    id: sparkRow
+                                    visible: !agentBox.hasWindows && agentBox.hasActivity
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 27
+                                    implicitHeight: 22
+                                    readonly property var days: (agentBox.usg && agentBox.usg.daily_tokens) ? agentBox.usg.daily_tokens : []
+                                    readonly property double peak: {
+                                        let m = 0
+                                        for (const v of days) if (v > m) m = v
+                                        return m
+                                    }
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        spacing: 10
+                                        Label {
+                                            Layout.preferredWidth: 56
+                                            text: "7-day"
+                                            color: Theme.muted
+                                            font.pixelSize: 12
+                                        }
+                                        Item {
+                                            id: sparkBars
+                                            Layout.fillWidth: true
+                                            implicitHeight: 16
+                                            Row {
+                                                anchors.fill: parent
+                                                spacing: 4
+                                                Repeater {
+                                                    model: sparkRow.days.length
+                                                    Rectangle {
+                                                        required property int index
+                                                        readonly property double val: sparkRow.days[index] || 0
+                                                        readonly property bool isToday: index === sparkRow.days.length - 1
+                                                        width: Math.max(4, (sparkBars.width - 4 * Math.max(0, sparkRow.days.length - 1)) / Math.max(1, sparkRow.days.length))
+                                                        height: val > 0 && sparkRow.peak > 0 ? Math.max(4, sparkBars.height * val / sparkRow.peak) : 3
+                                                        y: sparkBars.height - height
+                                                        radius: Math.min(width, height) / 2
+                                                        color: val <= 0 ? Theme.lift : (isToday ? Theme.cyan : Theme.alpha(Theme.accent, 0.55))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Label {
+                                            Layout.preferredWidth: 102
+                                            horizontalAlignment: Text.AlignRight
+                                            font.pixelSize: 12
+                                            color: Theme.faint
+                                            text: agentBox.usg ? (agentBox.usg.today_tokens > 0 ? root.tokens(agentBox.usg.today_tokens) + " today" : root.tokens(agentBox.usg.week_tokens) + " / 7d") : ""
+                                        }
+                                    }
+                                }
+
+                                // Subtle per-agent model & token caption
+                                Label {
+                                    visible: agentBox.hasActivity && (agentBox.hasWindows || (agentBox.usg && agentBox.usg.top_model !== ""))
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 27
+                                    font.pixelSize: 11
+                                    color: Theme.faint
+                                    text: {
+                                        const u = agentBox.usg
+                                        if (!u) return ""
+                                        const parts = []
+                                        if (agentBox.hasWindows) {
+                                            if (u.today_tokens > 0) parts.push(root.tokens(u.today_tokens) + " today")
+                                            else if (u.week_tokens > 0) parts.push(root.tokens(u.week_tokens) + " this week")
+                                        }
+                                        if (u.top_model) parts.push(u.top_model)
+                                        if (u.today_prompts > 0) parts.push(u.today_prompts + (u.today_prompts === 1 ? " prompt" : " prompts"))
+                                        return parts.join(" · ")
+                                    }
+                                }
                             }
                         }
                     }
@@ -478,58 +751,14 @@ Scope {
 
                 Rule {}
 
-                SectionTitle { text: "MAKE SOMETHING COOL" }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    Repeater {
-                        model: root.starters
-                        Rectangle {
-                            id: tile
-                            required property var modelData
-                            required property int index
-                            readonly property bool hot: root.isHot("starter:" + index)
-                            Layout.fillWidth: true
-                            implicitHeight: 66
-                            radius: 12
-                            color: hot ? Theme.cyanSoft : Theme.field
-                            border.width: 1
-                            border.color: hot ? Theme.alpha(Theme.accent, 0.4) : "transparent"
-                            Behavior on color { ColorAnimation { duration: 110 } }
-                            Column {
-                                anchors.centerIn: parent
-                                spacing: 6
-                                Icon {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: tile.modelData.glyph
-                                    font.pixelSize: 20
-                                    color: tile.hot ? Theme.cyan : Theme.fg
-                                }
-                                Label {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: tile.modelData.label
-                                    font.pixelSize: 12
-                                    color: tile.hot ? Theme.fg : Theme.muted
-                                }
-                            }
-                            Hit {
-                                anchors.fill: parent
-                                onEntered: root.hover("starter:" + tile.index)
-                                onClicked: root.activate("starter:" + tile.index)
-                            }
-                        }
-                    }
-                }
-
                 Label {
                     Layout.fillWidth: true
-                    Layout.topMargin: -2
+                    Layout.topMargin: -4
                     font.pixelSize: 11
                     color: root.toastText ? Theme.cyan : Theme.faint
                     text: root.toastText ? root.toastText
                         : root.cursorActive ? root.hint(root.cursor)
-                        : root.fetchedAt ? "Updated " + root.duration(root.now - root.fetchedAt).replace("now", "just now") + (root.now - root.fetchedAt >= 60 ? " ago" : "") + "   ·   r refresh   Esc close"
+                        : root.fetchedAt ? "Updated " + root.duration(root.now - root.fetchedAt).replace("now", "just now") + (root.now - root.fetchedAt >= 60 ? " ago" : "") + "   ·   1-" + Math.max(1, root.agents.length) + " launch   r refresh"
                         : root.hint("")
                 }
             }
