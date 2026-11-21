@@ -8,3 +8,5 @@
 # Upstream: hyprwm/Hyprland discussion #16648, fix in PR #16737 (draft as of
 # 2026-11-03). Remove this once a release with that fix ships.
 export HYPRLAND_NO_RT=1
+
+export PATH="$HOME/.local/bin:$PATH"

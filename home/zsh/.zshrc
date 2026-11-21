@@ -212,7 +212,7 @@ export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-
 export PATH="$HOME/.camber/bin:$PATH"
 
 # Last, so the tmux server starts with the full PATH / fnm env above
-# Auto-attach or create tmux session
-if command -v tmux &> /dev/null && [ -z "$TMUX" ]; then
+# Auto-attach or create tmux session (skip inside Herdr terminals)
+if command -v tmux &> /dev/null && [[ -z "$TMUX" && -z "$HC_TERMINAL_ID" && "${TERM_PROGRAM:-}" != [Hh]erdr* ]]; then
   tmux attach -t main 2>/dev/null || tmux new-session -s main
 fi
