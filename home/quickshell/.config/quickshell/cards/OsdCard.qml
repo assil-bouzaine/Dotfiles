@@ -60,12 +60,12 @@ Scope {
         exclusionMode: ExclusionMode.Ignore
         exclusiveZone: 0
 
-        // Resting pill bottom = 82 px above the screen bottom: the dock island
-        // (DockWindow.qml) is 66 px tall and 6 px off the edge, so its top is at 72 px;
-        // this leaves 10 px between them. The window holds 28 px more below the pill
-        // for the slide-in, which starts 28 px lower and rises into place.
+        // Resting pill bottom = 70 px above the screen bottom: the transparent
+        // dock (DockWindow.qml) is 52 px tall and 4 px off the edge (top at 56 px,
+        // ~61 px when an icon pops on hover), leaving comfortable room between them.
+        // The window holds 28 px more below the pill for the slide-in.
         anchors { bottom: true; left: true; right: true }
-        margins { bottom: 54 }
+        margins { bottom: 42 }
         implicitHeight: pill.height + 28
 
         mask: Region {

@@ -35,15 +35,16 @@ PanelWindow {
     readonly property bool tucked: autohide && !(revealed || menuOpen || dragging)
     readonly property bool contentShown: shown && !tucked
 
-    readonly property int gap: 6        // screen edge to the island, like gaps_out
-    readonly property int pad: 6        // island edge to the icons
-    readonly property int iconSize: 38
+    readonly property int gap: 4        // screen edge to the dock (Omarchy Style.spacing.xs)
+    readonly property int iconSize: 36
+    // Each app has a square slot with its icon in the middle, and the slots run
+    // straight to the edge of the dock.
     readonly property int iconInset: 8
     readonly property int slotSize: iconSize + iconInset * 2
-    readonly property real idleOpacity: 0.62   // pinned but not running
+    readonly property real pulseOpacity: 0.7   // starting app pulses down to this
     readonly property int rowHeight: 30
-    // Room above the island for its menu (5 rows) and the hover label.
-    readonly property int popupRoom: rowHeight * 5 + 14 + gap * 3
+    // Room above the dock for its menu (5 rows).
+    readonly property int popupRoom: rowHeight * 5 + 14 + gap * 2
 
     // Drag to reorder: the app being dragged, how far, and where it'd land.
     property int dragIndex: -1
@@ -59,8 +60,6 @@ PanelWindow {
     property var menuItem: null
     property Item menuSlot: null
     property bool settingsMenu: false
-    property Item hoverSlot: null
-    property string hoverText: ""
 
     onShownChanged: {
         if (shown) return
@@ -111,7 +110,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Normal
     exclusiveZone: 0
     anchors { bottom: true; left: true; right: true }
-    implicitHeight: gap + slotSize + pad * 2 + popupRoom
+    implicitHeight: gap + slotSize + popupRoom
 
     mask: Region {
         item: window.contentShown ? body : null
@@ -151,13 +150,17 @@ PanelWindow {
 
     Item {
         id: body
-        width: slots.implicitWidth + window.pad * 2
-        height: window.slotSize + window.pad * 2
+        width: slots.implicitWidth
+        height: slots.implicitHeight
         // How far it's tucked below the edge (auto-hide).
-        property real tuck: window.tucked ? height + window.gap : 0
+        property real tuck: window.tucked ? window.slotSize + window.gap : 0
         Behavior on tuck {
+            id: tuckMotion
             enabled: window.shown
-            NumberAnimation { duration: 170; easing.type: Easing.OutCubic }
+            NumberAnimation {
+                duration: tuckMotion.targetValue > 0 ? 120 : 180
+                easing.type: Easing.OutCubic
+            }
         }
         x: Math.round((window.width - width) / 2)
         y: window.height - height - window.gap + tuck
@@ -175,58 +178,17 @@ PanelWindow {
             }
         }
 
-        // the island, like the bar's
-        Rectangle {
-            anchors.fill: parent
-            radius: 18
-            color: Theme.ink
-            border.width: 1
-            border.color: Theme.edge
-        }
-
         Row {
             id: slots
-            x: window.pad
-            y: window.pad
+            anchors.centerIn: parent
 
             AppsSlot {}
-
-            // hairline between the apps button and the apps
-            Item {
-                width: 9
-                height: window.slotSize
-                Rectangle { anchors.centerIn: parent; width: 1; height: 26; color: Theme.rule }
-            }
 
             Repeater {
                 id: appRepeater
                 model: window.dock ? window.dock.itemModel : null
                 delegate: AppSlot {}
             }
-        }
-    }
-
-    // The hovered app's name, above its icon.
-    Rectangle {
-        id: tip
-        visible: window.contentShown && !!window.hoverSlot && !window.dragging && !window.menuOpen && window.hoverText !== ""
-        readonly property real cx: window.hoverSlot ? window.hoverSlot.mapToItem(window.contentItem, window.hoverSlot.width / 2, 0).x : 0
-        x: Math.max(window.gap, Math.min(window.width - width - window.gap, cx - width / 2))
-        y: body.y - height - 8
-        width: tipText.implicitWidth + 20
-        height: tipText.implicitHeight + 10
-        radius: 9
-        color: Theme.ink
-        border.width: 1
-        border.color: Theme.edge
-        Text {
-            id: tipText
-            anchors.centerIn: parent
-            text: window.hoverText
-            color: Theme.fg
-            font.family: Theme.font
-            font.pixelSize: 12
-            font.weight: Font.Medium
         }
     }
 
@@ -245,13 +207,11 @@ PanelWindow {
         }
     }
 
-    // All apps: a grid of squares reads as "apps" in any icon theme.
+    // All apps: a grid of app squares reads as "all apps" in any icon theme.
+    // Drawn rather than taken from a font, so its edges stay crisp on the
+    // transparent dock and it fills its slot like the app icons beside it.
     component AppsSlot: Slot {
         id: appsSlot
-        onHoveredChanged: {
-            if (hovered) { window.hoverSlot = appsSlot; window.hoverText = "All apps" }
-            else if (window.hoverSlot === appsSlot) window.hoverSlot = null
-        }
         mouse.onClicked: event => {
             if (event.button === Qt.RightButton) {
                 window.openSettingsMenu(appsSlot)
@@ -265,11 +225,13 @@ PanelWindow {
             y: window.iconInset
             width: window.iconSize
             height: window.iconSize
-            scale: appsSlot.hovered ? 1.12 : 1
+            scale: appsSlot.hovered ? 1.15 : 1
             transformOrigin: Item.Bottom
             Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
             Grid {
-                readonly property int square: Math.round(window.iconSize * 0.2)
+                readonly property int square: Math.round(window.iconSize * 0.22)
+                property color tint: Theme.fg
+                Behavior on tint { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                 anchors.centerIn: parent
                 columns: 3
                 spacing: Math.round(window.iconSize * 0.1)
@@ -278,8 +240,8 @@ PanelWindow {
                     delegate: Rectangle {
                         width: parent.square
                         height: parent.square
-                        radius: Math.max(1, Math.round(parent.square * 0.25))
-                        color: index === 4 ? Theme.accent : Theme.fg
+                        radius: Math.max(1, Math.round(parent.square * 0.2))
+                        color: parent.tint
                     }
                 }
             }
@@ -294,9 +256,6 @@ PanelWindow {
         readonly property var modelData: window.dock ? window.dock.itemFor(key) : null
         readonly property bool launching: !!window.dock && window.dock.isLaunching(key)
         readonly property bool lifted: window.dragIndex === index
-        readonly property int windowCount: modelData ? modelData.windows.length : 0
-        readonly property bool focused: !!modelData && modelData.windows.some(w => w.toplevel && w.toplevel.activated)
-        readonly property bool allMinimized: windowCount > 0 && modelData.windows.every(w => w.minimized)
         property point pressPoint
         property bool dragged: false
         property real pulse: 1
@@ -313,11 +272,6 @@ PanelWindow {
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
         }
         z: lifted ? 1 : 0
-
-        onHoveredChanged: {
-            if (hovered) { window.hoverSlot = appSlot; window.hoverText = window.dock ? window.dock.nameFor(modelData) : "" }
-            else if (window.hoverSlot === appSlot) window.hoverSlot = null
-        }
 
         // The slot stays put; only the icon moves. Reading the pointer through a
         // moving slot would feed each move back into the next.
@@ -366,8 +320,7 @@ PanelWindow {
             else window.dock.activate(appSlot.modelData)
         }
 
-        // Running apps in full, pinned ones that aren't running faded, one
-        // that is starting pulses between the two.
+        // Apps are drawn in full, running or not, and one that is starting pulses.
         Image {
             x: window.iconInset
             y: window.iconInset
@@ -381,31 +334,18 @@ PanelWindow {
             asynchronous: false
             smooth: true
             mipmap: true
-            opacity: appSlot.launching ? appSlot.pulse : (appSlot.windowCount > 0 && !appSlot.allMinimized ? 1 : window.idleOpacity)
+            opacity: appSlot.launching ? appSlot.pulse : 1
             transform: Translate { x: appSlot.displayedShift }
-            scale: appSlot.lifted || appSlot.hovered ? 1.12 : 1
+            scale: appSlot.lifted || appSlot.hovered ? 1.15 : 1
             transformOrigin: Item.Bottom
             Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-        }
-
-        // Running: a dot; the focused app's is a wider accent pill.
-        Rectangle {
-            visible: appSlot.windowCount > 0
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: parent.height - 4
-            width: appSlot.focused ? 12 : 4
-            height: 4
-            radius: 2
-            color: appSlot.focused ? Theme.accent : appSlot.allMinimized ? Theme.faint : Theme.muted
-            transform: Translate { x: appSlot.displayedShift }
-            Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
         }
 
         SequentialAnimation {
             running: appSlot.launching
             loops: Animation.Infinite
             onRunningChanged: if (!running) appSlot.pulse = 1
-            NumberAnimation { target: appSlot; property: "pulse"; from: 1; to: window.idleOpacity; duration: 500; easing.type: Easing.InOutSine }
+            NumberAnimation { target: appSlot; property: "pulse"; from: 1; to: window.pulseOpacity; duration: 500; easing.type: Easing.InOutSine }
             NumberAnimation { target: appSlot; property: "pulse"; to: 1; duration: 500; easing.type: Easing.InOutSine }
         }
     }

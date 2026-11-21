@@ -65,8 +65,8 @@ Titlebars have close, maximize and minimize buttons; SUPER + ALT + M also
 minimizes to the dock. Switching back to tiling restores minimized windows.
 
 The Quickshell dock appears at the bottom only on floating workspaces.
-It uses the same ink island style as the bar, with pinned, running and
-minimized apps. Default pins: Brave, kitty, Dolphin, VS Code, Spotify,
+It matches Omarchy 4.5's transparent borderless dock (bare floating icons with
+no box or background), with pinned, running and minimized apps. Default pins: Brave, kitty, Dolphin, VS Code, Spotify,
 Discord and Thunderbird (installed apps only). Click to focus, restore or
 start an app; middle-click for a new window. Right-click for New window,
 Keep in / Remove from dock, or Quit. Drag icons to reorder them.

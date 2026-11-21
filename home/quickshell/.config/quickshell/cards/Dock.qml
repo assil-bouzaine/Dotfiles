@@ -4,8 +4,8 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import "DockModel.js" as DockModel
 
-// The dock on floating workspaces (SUPER + ALT + L floats one), like Omarchy
-// 4.5's dock (shell/plugins/dock, MIT), drawn as one of the bar's ink islands.
+// The dock on floating workspaces (SUPER + ALT + L floats one), matching
+// Omarchy 4.5's transparent borderless dock (shell/plugins/dock, MIT).
 // Pinned apps, running apps and minimized windows (SUPER + ALT + M, or the
 // titlebar's −). Click: focus / start, middle-click: new window, right-click:
 // menu, drag: reorder. The first button, or SUPER + ALT + SPACE, opens a grid
